@@ -1,6 +1,6 @@
 # Habit Tracker
 
-Track habits. Author: Madhav Dih Nair.
+Track habits. Author: Madhav Dih Nair & his Dihlettes
 
 ## Structure
 
