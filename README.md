@@ -135,6 +135,11 @@ After the initial social migration, apply
 requests, removing friends, and blocking. Both remove and block also delete
 every sharing rule between the two accounts.
 
+Apply `database/migrations/20260922_add_direct_chat.sql` after those migrations
+to enable private one-to-one text chat and live message delivery. Only accepted
+friends can create, read, or send messages; removing or blocking a friend also
+permanently removes the conversation and its messages.
+
 ## Private proof photos
 
 The existing private `proof-photos` bucket and Storage policies are required.

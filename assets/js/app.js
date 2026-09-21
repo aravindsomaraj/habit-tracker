@@ -574,7 +574,7 @@ async function saveDay(id,k){
 
 /* ---------------- modal / chrome ---------------- */
 function modal(html){ el('modalRoot').innerHTML='<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal"><div id="modalStoreNote"></div>'+html+'</div></div>'; hydrateProofPhotos(); }
-function closeModal(){ el('modalRoot').innerHTML=''; }
+function closeModal(){ if(typeof closeChat==='function') closeChat(); el('modalRoot').innerHTML=''; }
 
 el('tabs').addEventListener('click',function(e){
   var b=e.target.closest('button'); if(!b) return; view=b.dataset.v; render();

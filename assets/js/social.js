@@ -1,8 +1,10 @@
 // Opt-in accountability features. Social records never include values, notes, or proof photos.
 var socialGeneration=0, socialReady=false, socialLoading=false, socialError='', socialProfile=null;
 var socialFriends=[], socialRequests=[], socialFeed=[], socialShares=[];
+var chatConversationId=null, chatFriendName='', chatChannel=null;
 
 function resetSocialSession(){
+  stopChatSubscription(); chatConversationId=null; chatFriendName='';
   socialGeneration++; socialReady=false; socialLoading=false; socialError=''; socialProfile=null;
   socialFriends=[]; socialRequests=[]; socialFeed=[]; socialShares=[];
   var generation=socialGeneration;
@@ -34,7 +36,7 @@ function friendInviteView(){
 function friendRequestsView(received,sent){
   var html='<div class="card"><h2>Friends</h2>';
   if(!socialFriends.length) html+='<p class="sub">No accepted friends yet.</p>';
-  else html+='<div class="social-list">'+socialFriends.map(function(friend){return '<div><b>'+esc(friend.display_name)+'</b><span>@'+esc(friend.handle)+'</span><span class="social-actions"><button class="pillbtn" onclick="removeFriendship(\''+friend.friendship_id+'\')">Remove</button><button class="pillbtn danger-outline" onclick="blockFriendship(\''+friend.friendship_id+'\')">Block</button></span></div>';}).join('')+'</div>';
+  else html+='<div class="social-list">'+socialFriends.map(function(friend){return '<div><b>'+esc(friend.display_name)+'</b><span>@'+esc(friend.handle)+'</span><span class="social-actions"><button class="pillbtn" onclick="openChat(\''+friend.id+'\')">Message</button><button class="pillbtn" onclick="removeFriendship(\''+friend.friendship_id+'\')">Remove</button><button class="pillbtn danger-outline" onclick="blockFriendship(\''+friend.friendship_id+'\')">Block</button></span></div>';}).join('')+'</div>';
   if(received.length){html+='<h3 class="social-heading">Requests for you</h3><div class="social-list">'+received.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><span class="social-actions"><button class="pillbtn" onclick="acceptFriendRequest(\''+row.id+'\')">Accept</button><button class="pillbtn danger-outline" onclick="blockFriendship(\''+row.id+'\')">Block</button></span></div>';}).join('')+'</div>';}
   if(sent.length){html+='<h3 class="social-heading">Sent</h3><div class="social-list">'+sent.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><button class="pillbtn" onclick="removeFriendship(\''+row.id+'\')">Cancel</button></div>';}).join('')+'</div>';}
   return html+'</div>';
@@ -135,6 +137,62 @@ async function blockFriendship(id){
     await loadSocialAfterWrite('Person blocked and sharing cleared.');
   }catch(error){socialMessage(error.message||'Could not block this person.');}
 }
+async function openChat(friendId){
+  try{
+    var friend=socialFriends.filter(function(row){return row.id===friendId;})[0];
+    if(!friend) throw new Error('This friend is no longer available.');
+    var friendName=friend.display_name;
+    var client=window.getSupabaseClient(), result=await client.rpc('start_direct_conversation',{friend_id:friendId});
+    if(result.error) throw result.error;
+    chatConversationId=result.data; chatFriendName=friendName;
+    modal('<div class="chat-head"><div><h3>Chat with '+esc(friendName)+'</h3><p class="sub">Only you and '+esc(friendName)+' can read these messages.</p></div><button class="pillbtn" onclick="closeModal()">Close</button></div><div id="chatMessages" class="chat-messages" role="log" aria-live="polite"><p class="tiny">Loading messages…</p></div><form class="chat-compose" onsubmit="sendChatMessage();return false;"><input id="chatInput" maxlength="2000" autocomplete="off" placeholder="Write a message" required><button class="cta" type="submit">Send</button></form>');
+    await loadChatMessages(); startChatSubscription();
+  }catch(error){socialMessage(error.message||'Could not open this chat.');}
+}
+async function loadChatMessages(){
+  if(!chatConversationId) return;
+  var box=el('chatMessages');
+  try{
+    var result=await window.getSupabaseClient().from('chat_messages').select('id,sender_id,body,created_at').eq('conversation_id',chatConversationId).order('created_at',{ascending:true}).limit(100);
+    if(result.error) throw result.error;
+    if(!box||!chatConversationId) return;
+    box.innerHTML=(result.data||[]).map(chatMessageHtml).join('')||'<p class="tiny">No messages yet. Say hello.</p>';
+    box.scrollTop=box.scrollHeight;
+  }catch(error){if(box) box.innerHTML='<p class="tiny">Could not load messages. '+esc(error.message||'Please retry.')+'</p>';}
+}
+function chatMessageHtml(message){
+  var mine=message.sender_id===socialProfile.id;
+  return '<div class="chat-message '+(mine?'mine':'')+'" data-chat-id="'+esc(message.id)+'"><span>'+esc(message.body)+'</span><small>'+esc(mine?'You':chatFriendName)+' · '+esc(new Date(message.created_at).toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}))+'</small></div>';
+}
+function appendChatMessage(message){
+  var box=el('chatMessages');
+  if(!box||message.conversation_id!==chatConversationId||box.querySelector('[data-chat-id="'+message.id+'"]')) return;
+  if(box.querySelector('.tiny')) box.innerHTML='';
+  box.insertAdjacentHTML('beforeend',chatMessageHtml(message)); box.scrollTop=box.scrollHeight;
+}
+async function sendChatMessage(){
+  var input=el('chatInput'), body=(input.value||'').trim();
+  if(!body||!chatConversationId) return;
+  input.disabled=true;
+  try{
+    var result=await window.getSupabaseClient().from('chat_messages').insert({conversation_id:chatConversationId,sender_id:socialProfile.id,body:body}).select('id,conversation_id,sender_id,body,created_at').single();
+    if(result.error) throw result.error;
+    input.value=''; appendChatMessage(result.data);
+  }catch(error){alert(error.message||'Could not send your message.');}
+  finally{input.disabled=false;input.focus();}
+}
+function startChatSubscription(){
+  stopChatSubscription();
+  if(!chatConversationId) return;
+  var conversationId=chatConversationId, client=window.getSupabaseClient();
+  chatChannel=client.channel('chat:'+conversationId).on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages',filter:'conversation_id=eq.'+conversationId},function(payload){
+    if(chatConversationId===conversationId) appendChatMessage(payload.new);
+  }).subscribe();
+}
+function stopChatSubscription(){
+  if(chatChannel){window.getSupabaseClient().removeChannel(chatChannel);chatChannel=null;}
+}
+function closeChat(){stopChatSubscription();chatConversationId=null;chatFriendName='';}
 function openSharing(){
   var friendIds={};socialFriends.forEach(function(friend){friendIds[friend.id]=friend;});
   var html='<h3>Share completion updates</h3><p class="sub">Choose which friends can see a habit being marked complete. Nothing else is shared.</p>';
