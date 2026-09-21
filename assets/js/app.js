@@ -123,7 +123,7 @@ function render(){
   if(!storeReady){ v.innerHTML='<div class="card"><p class="sub">Loading your habits…</p></div>'; return; }
   if(view==='social') v.innerHTML=socialView();
   else if(!habits.length){ v.innerHTML=emptyState(); return; }
-  if(view==='today') v.innerHTML=todayView();
+  else if(view==='today') v.innerHTML=todayView();
   else if(view==='progress') v.innerHTML=picker()+progressView();
   else if(view==='calendar') v.innerHTML=picker()+calendarView();
   else if(view==='graph') v.innerHTML=picker()+graphView();
