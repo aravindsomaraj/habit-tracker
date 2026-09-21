@@ -1,0 +1,2 @@
+.react-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--violet);color:#fff;padding:12px 22px;border-radius:999px;font-weight:900;z-index:120;box-shadow:0 6px 0 #6d3fd6;font-family:Nunito,sans-serif;animation:toastfade 1.9s both}
+@keyframes toastfade{0%,74%{opacity:1}100%{opacity:0}}

@@ -5,38 +5,39 @@ Track habits. Author: Madhav Dih Nair.
 ## Structure
 
 ```text
-index.html                 Page markup and script entry points
-config.js                  Public production Supabase configuration
-CNAME                      Existing custom-domain configuration
-assets/
-  css/styles.css           Styling
-  js/app.js                State, calculations, views, and event handlers
-  js/storage.js            Supabase habit/entry loading and writes
-  js/photos.js             Private proof-photo uploads, cleanup, and signed display
-  js/social.js             Opt-in profiles, friends, per-habit sharing, and activity feed
-  js/supabase-client.js     Supabase browser client using window.APP_CONFIG
-  js/auth.js               Signup, login, logout, and session-based UI
-  images/                  Cat mood illustrations
+index.html                 Vite/React entry document
+public/config.js           Public production Supabase configuration
+public/CNAME               Custom-domain configuration copied into the build
+assets/css/styles.css      Existing visual system and responsive rules
+assets/images/             Cat mood illustrations
+src/
+  app/                     Authenticated application shell and view coordination
+  auth/                    Session provider and signup/login UI
+  components/              Reusable modals, banners, photos, and feedback UI
+  data/                    Supabase database, Storage, social, and client adapters
+  hooks/                   Habit and social state/lifecycle hooks
+  lib/                     Habit calculations, dates, streaks, points, and templates
+  views/                   Today, Progress, Calendar, Graph, Proof, Friends, Habits
+tests/                     Vitest/jsdom regression checks with mocked services
 server/                    Future authenticated API (see README)
 database/
   README.md                Data model and integration plan
   migrations/              Versioned schema changes, including social features
 ```
 
-The frontend remains framework-free. Keeping `index.html` at the root preserves
-its static hosting layout. Classic scripts load storage functions before the
-application; existing inline event handlers require global application functions.
+The frontend uses React functional components and hooks, bundled by Vite. It is
+still a client-only single-page application: no client-side router or server is
+required, and the custom domain serves it from `/`.
 
 ## Run locally
 
-From this directory, run `python3 -m http.server 8000` and open
-http://localhost:8000. This serves the static frontend only.
+Install Node.js 24 LTS, then run `npm install` and `npm run dev`. Open
+http://localhost:8000. Use `npm run build` to create the production `dist/`.
 
 ## Supabase authentication
 
-The official Supabase JS v2 browser client loads from the
-[documented CDN](https://supabase.com/docs/reference/javascript/installing).
-`config.js` defines `window.APP_CONFIG.SUPABASE_URL` and
+The official Supabase JS v2 browser client is installed from npm and bundled by
+Vite. `public/config.js` defines `window.APP_CONFIG.SUPABASE_URL` and
 `window.APP_CONFIG.SUPABASE_PUBLISHABLE_KEY`. Only `sb_publishable_...` keys are
 accepted. Never put a secret or service-role key in browser configuration.
 The tracked config contains exactly those two browser-public values, copied from
@@ -65,10 +66,11 @@ No project settings, schema, SQL, or RLS policies were changed by this task.
 
 ## GitHub Pages deployment
 
-Commit `config.js` with the application files; production no longer needs an
-ignored file or a build step. The tracked GitHub Actions workflow deploys the
-repository root to GitHub Pages after every push to `main` (and supports manual
-runs from the Actions tab). In GitHub Pages settings, set the publishing source
+Commit `public/config.js` with the application files; production does not use the
+ignored local config. The tracked GitHub Actions workflow installs locked npm
+dependencies, runs regression tests, builds with Vite, and deploys `dist/` to
+GitHub Pages after every push to `main` (and supports manual runs from the Actions
+tab). In GitHub Pages settings, set the publishing source
 to **GitHub Actions** once, confirm the custom domain, and enable Enforce HTTPS
 once the certificate is available. Keep `CNAME` as `habittrackerapp.online`.
 See [GitHub Pages HTTPS guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https).
@@ -80,13 +82,10 @@ browser session. Localhost and production have separate browser session storage.
 
 ## Repeatable mock checks
 
-Run the local static server, then open
-http://localhost:8000/tests/reliability.html. The test page fetches local sources
-and uses fake auth, database, and Storage clients; it never loads production
-config or calls Supabase. No dependencies or build tools are required. It covers
-signup/confirmation, login/logout, restoration, invalid configuration, duplicate
-requests, database reads/writes, photo cleanup, signed URL renewal, failures,
-account changes, loading UI, and HTML escaping.
+Run `npm test`. The Vitest/jsdom suite uses fake auth, database, and Storage
+clients; it never loads production config or calls Supabase. It covers auth
+gating, confirmation signup, duplicate requests, field mapping, narrow entry
+writes, private photo ordering/rollback/signed URLs, and core rest/points logic.
 
 The existing UI creates/deletes habit definitions and updates daily entries;
 it does not offer an editor for an existing habit's name/goal/duration. This
@@ -95,8 +94,8 @@ mock checks do not establish live browser, RLS, or network correctness.
 
 ## Database persistence
 
-The existing tracker reset hook loads the signed-in user's `habits`, then their
-`habit_entries`, through `assets/js/storage.js`. Reads are paginated; there is
+The habit state hook loads the signed-in user's `habits`, then their
+`habit_entries`, through `src/data/habits.js`. Reads are paginated; there is
 no Realtime subscription. Reload to see changes made in another browser/tab.
 Database schema and RLS remain unchanged.
 
@@ -210,3 +209,13 @@ are historical scaffolding, not instructions to create a server or change schema
 14. Leave a photo open past the signed URL refresh window, then test retry after
     disconnecting/reconnecting. Log out while operations are pending and verify
     that the next account sees no stale photos, habits, or notifications.
+15. Create a Friends profile, send/accept/cancel a request, remove a friend, and
+    block a request. Confirm each account sees only the relationship state allowed
+    by RLS.
+16. Share one habit with one accepted friend. Complete and uncomplete a day;
+    confirm only completion metadata appears in the friend's feed and no value,
+    metric, note, or photo path is exposed.
+17. Open direct chat in both accounts. Confirm initial history, live delivery,
+    deduplication, unread badges, and subscription cleanup after closing or logout.
+18. Check the Today, Progress, Calendar, Graph, Proof, Friends, and Habits views
+    at desktop and mobile widths, including dark/light theme persistence.
