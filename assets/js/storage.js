@@ -1,7 +1,7 @@
 // Supabase persistence. Authentication and client configuration live separately.
 var storageGeneration=0, storageUserId=null, storageBusy=false;
 var HABIT_COLUMNS='id,name,emoji,target,unit,days,start_date,metric,ramp,created_at';
-var ENTRY_COLUMNS='id,habit_id,entry_date,done,rest,value,metric,updated_at';
+var ENTRY_COLUMNS='id,habit_id,entry_date,done,rest,value,metric,photo_path,updated_at';
 
 function noteStore(msg){
   var html=msg?'<div class="banner" role="status">'+esc(msg)+'</div>':'';
@@ -23,11 +23,12 @@ function entryFromRow(row){
   return {done:!!row.done,rest:!!row.rest,
     value:row.value==null?null:Number(row.value),
     metric:row.metric==null?null:Number(row.metric),
-    ts:Date.parse(row.updated_at),photo:null};
+    ts:Date.parse(row.updated_at),photo:row.photo_path||null};
 }
 // Called by the existing tracker reset hook, including logout/account switches.
 function resetStorageSession(){
   var generation=++storageGeneration;
+  resetPhotoSession();
   storageUserId=null; storeReady=false;
   storageLock(false);
   // Run outside the synchronous auth callback to avoid the auth client's lock.
@@ -88,9 +89,9 @@ async function storageWrite(action){
   var generation=storageGeneration,owner=storageUserId;
   storageLock(true); noteStore('Saving…');
   try{
-    var commit=await action(window.getSupabaseClient(),owner);
+    var commit=await action(window.getSupabaseClient(),owner,generation);
     if(generation!==storageGeneration) return false;
-    commit(); noteStore(''); render();
+    var warning=commit(); noteStore(warning||''); render();
     return true;
   }catch(error){
     if(generation===storageGeneration){
@@ -117,19 +118,26 @@ function saveHabit(h){
 function saveEntry(h,dkey,patch){
   return storageWrite(async function(client){
     if(!h||!byId(h.id)) throw new Error('This habit is no longer available.');
-    var next=Object.assign({done:false,rest:false,value:null,metric:null},entryOf(h,dkey)||{},patch);
-    var result=await client.from('habit_entries').upsert({habit_id:h.id,entry_date:dkey,
-      done:next.done,rest:next.rest,value:next.value,metric:next.metric,
-      updated_at:new Date().toISOString()
-    },{onConflict:'habit_id,entry_date',defaultToNull:false}).select(ENTRY_COLUMNS).single();
-    if(result.error) throw result.error;
-    var saved=entryFromRow(result.data);
+    var saved=await writeEntryRow(client,h,dkey,patch);
     return function(){entries[h.id]=entries[h.id]||{};entries[h.id][dkey]=saved;};
   });
 }
+// Shared by day edits and photo operations; ordinary edits never overwrite photo_path.
+async function writeEntryRow(client,h,dkey,patch){
+  var next=Object.assign({done:false,rest:false,value:null,metric:null},entryOf(h,dkey)||{},patch);
+  var row={habit_id:h.id,entry_date:dkey,done:next.done,rest:next.rest,
+    value:next.value,metric:next.metric,updated_at:new Date().toISOString()};
+  if(Object.prototype.hasOwnProperty.call(patch,'photo')) row.photo_path=patch.photo;
+  var result=await client.from('habit_entries').upsert(row,
+    {onConflict:'habit_id,entry_date',defaultToNull:false}).select(ENTRY_COLUMNS).single();
+  if(result.error) throw result.error;
+  return entryFromRow(result.data);
+}
 function removeHabit(h){
-  return storageWrite(async function(client,owner){
+  return storageWrite(async function(client,owner,generation){
     if(!h||!byId(h.id)) throw new Error('This habit is no longer available.');
+    await deleteHabitPhotos(client,owner,h.id,generation);
+    ensurePhotoSession(generation,owner);
     var result=await client.from('habits').delete().eq('id',h.id)
       .eq('user_id',owner).select('id').single();
     if(result.error) throw result.error;

@@ -11,6 +11,7 @@ assets/
   css/styles.css           Styling
   js/app.js                State, calculations, views, and event handlers
   js/storage.js            Supabase habit/entry loading and writes
+  js/photos.js             Private proof-photo uploads, cleanup, and signed display
   js/supabase-client.js    Supabase browser client using window.APP_CONFIG
   js/auth.js               Signup, login, logout, and session-based UI
   images/                  Cat mood illustrations
@@ -71,16 +72,49 @@ Auth implementation, configuration, database schema, and RLS remain unchanged.
 
 Habit inserts include the authenticated `user_id` and omit `id` so PostgreSQL
 generates it. Entry upserts also omit `id` and use the existing unique constraint
-on `(habit_id, entry_date)`. Deletion targets only the habit row, relying on the
-existing `ON DELETE CASCADE` for entries. These database defaults/constraints
+on `(habit_id, entry_date)`. Deletion removes the habit’s Storage objects first, then targets only the habit
+row, relying on the existing `ON DELETE CASCADE` for entries. These database defaults/constraints
 must already exist; the app does not create or change them.
 
 The adapter maps `start` to `start_date`, daily keys to `entry_date`, `createdAt`
 to/from `created_at`, and entry `ts` to/from `updated_at`. Dates retain their
 `YYYY-MM-DD` calendar representation. Numeric values and nulls are preserved.
-Only supported schema fields are sent; photos and notes are not persisted.
-`photo_path` is neither loaded nor written, leaving existing values untouched.
-Photo upload controls display an unavailable message; Supabase Storage is unused.
+Only supported schema fields are sent; notes are not persisted. `photo_path` maps
+to the existing in-memory `photo` field and contains only a Storage object path.
+Ordinary daily edits do not overwrite `photo_path`.
+
+## Private proof photos
+
+The existing private `proof-photos` bucket and Storage policies are required;
+this task does not create or change buckets, policies, schema, or authentication.
+Use the camera button on Today or in a calendar day to upload/replace an image.
+The Proof gallery and day editor both offer removal. JPEG, PNG, and WebP files
+are accepted, with a client-side limit of 5 MiB (5 × 1024 × 1024 bytes).
+
+Every upload uses a fresh UUID filename under `<userId>/<habitId>/`, with
+`upsert: false`. Only the path is saved in `habit_entries.photo_path`. On reload,
+paths are loaded from the database and private signed URLs are generated for
+visible images. URLs expire after an hour, are refreshed before expiry, and are
+cached only in memory. Failed signing/downloads show an inline retry button.
+Caches are cleared when the account changes.
+
+Replacement uploads the new object, saves its path, then deletes the old object.
+If the database write fails, the app attempts to remove the newly uploaded file.
+If old-file cleanup fails after a successful replacement, the new photo remains
+saved and the app shows a cleanup warning. Removing a photo deletes its object,
+then clears `photo_path`; a failed database clear is reported and can be retried.
+
+Habit deletion reads current photo references and lists its Storage folder
+(including leftover uploads) with pagination. It deletes all gathered objects
+before deleting the habit row. Entries are still deleted by database cascade.
+If listing or object deletion fails, the habit row is not deleted.
+
+Storage and database operations are not atomic. A database failure after object
+removal can leave a reference to a missing image; retry the removal/deletion.
+A connection or session change can also prevent cleanup; errors are reported
+for the active account. Habit-folder cleanup on deletion includes orphaned files
+left by a failed replacement. Concurrent edits from multiple tabs are not locked
+across tabs, so reload before retrying a failed operation.
 
 Writes temporarily lock habit controls and update in-memory state only after
 server confirmation. Failures appear in the page banner and any open modal;
@@ -106,3 +140,10 @@ are historical scaffolding, not instructions to create a server or change schema
 7. Delete a habit and reload: the habit and its entries should be gone.
 8. Simulate a failed save: no completion toast should appear, existing data should
    remain intact, and a visible error should explain the failure.
+
+9. Upload JPEG/PNG/WebP proofs, reload, and check both gallery and day previews.
+10. Reject GIFs and files over 5 MiB. Replace a proof, then remove it; inspect the
+    bucket and entry to verify object cleanup and a path-only database value.
+11. Simulate upload, signing, deletion, and database-update failures. Verify visible
+    errors, cleanup attempts after failed photo saves, and no premature habit delete.
+12. Delete a habit with photos: its objects should disappear before the habit row.

@@ -127,6 +127,7 @@ function render(){
   else if(view==='graph') v.innerHTML=picker()+graphView();
   else if(view==='proof') v.innerHTML=picker()+proofView();
   else v.innerHTML=manageView();
+  hydrateProofPhotos();
 }
 function emptyState(){
   return '<div class="card"><div class="empty"><div class="big">🎯</div>'+
@@ -296,7 +297,21 @@ function byId(id){return habits.filter(function(h){return h.id===id;})[0];}
 
 /* -- photo -- */
 function pickPhoto(id,k){
-  alert('Photo uploads are not available yet.');
+  if(!storeReady||storageBusy) return;
+  var generation=storageGeneration,h=byId(id);
+  var input=document.createElement('input');
+  input.type='file';input.accept='image/jpeg,image/png,image/webp';
+  input.onchange=async function(){
+    if(generation!==storageGeneration) return;
+    var file=input.files&&input.files[0];
+    if(file&&await uploadProofPhoto(h,k,file)) closeModal();
+  };
+  input.click();
+}
+
+async function removePhoto(id,k){
+  if(!confirm('Remove this proof photo?')) return;
+  if(await removeProofPhoto(byId(id),k)) closeModal();
 }
 
 /* -- progress -- */
@@ -466,14 +481,15 @@ function proofView(){
   if(!ks.length) return '<div class="card"><h2>Proof shots</h2><p class="sub">Upload progress pics from the Today tab or a calendar day — body shots, finished pages, posted reels.</p><div class="empty"><div class="big">📸</div>Nothing uploaded yet</div></div>';
   return '<div class="card"><h2>'+h.emoji+' Proof shots</h2><p class="sub">'+ks.length+' uploads · oldest to newest</p><div class="gal">'+
     ks.map(function(k){var e=E[k];
-      return '<figure><img src="/_blob/'+esc(e.photo)+'" alt="Proof from '+esc(k)+'" loading="lazy">'+
-        '<figcaption>'+dayLabel(parseKey(k))+(e.value!=null?'<br>'+fmt(e.value)+' '+esc(h.unit):'')+'</figcaption></figure>';
+      return '<figure>'+proofImage(e.photo,'Proof from '+k)+
+        '<figcaption>'+dayLabel(parseKey(k))+(e.value!=null?'<br>'+fmt(e.value)+' '+esc(h.unit):'')+'</figcaption>'+
+        '<button class="pillbtn" onclick="removePhoto(\''+h.id+'\',\''+k+'\')">Remove</button></figure>';
     }).join('')+'</div></div>';
 }
 
 /* -- manage -- */
 function manageView(){
-  return '<div class="card"><h2>Your habits</h2><p class="sub">Finished a goal or want to drop one? Delete it here — daily entries go with it.</p>'+
+  return '<div class="card"><h2>Your habits</h2><p class="sub">Finished a goal or want to drop one? Delete it here — daily entries and proof photos go with it.</p>'+
     habits.map(function(h){var s=stats(h);
       return '<div class="hrow"><div class="emoji">'+h.emoji+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
       '<div class="task">'+fmt(h.target)+' '+esc(h.unit)+'/day · '+h.days+' days · '+s.done+' done · '+pct(s.done,h.days)+'% complete · '+s.xp+' pts</div>'+
@@ -484,7 +500,7 @@ function manageView(){
 }
 function confirmDelete(id){
   var h=byId(id);
-  modal('<h3>Delete "'+esc(h.name)+'"?</h3><p class="sub">Every daily entry for this habit is removed for good.</p>'+
+  modal('<h3>Delete "'+esc(h.name)+'"?</h3><p class="sub">Every daily entry and proof photo for this habit is removed for good.</p>'+
     '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Keep it</button>'+
     '<button class="cta danger" onclick="doDelete(\''+id+'\')">Delete forever</button></div>');
 }
@@ -528,8 +544,9 @@ function openDay(k){
     '<p class="sub">'+h.emoji+' '+esc(h.name)+' · day '+(idx+1)+' target '+fmt(targetFor(h,idx))+' '+esc(h.unit)+'</p>'+
     '<div class="row2"><label class="f"><span>'+esc(h.unit)+' done</span><input id="d_val" type="number" value="'+esc(e.value!=null?e.value:'')+'"></label>'+
     '<label class="f"><span>'+esc(h.metric)+'</span><input id="d_met" type="number" value="'+esc(e.metric!=null?e.metric:'')+'"></label></div>'+
-    (e.photo?'<img src="/_blob/'+esc(e.photo)+'" style="border-radius:14px;border:2px solid var(--line);max-height:220px;margin-bottom:12px" alt="proof">':'')+
-    '<button class="cta ghost" onclick="pickPhoto(\''+h.id+'\',\''+k+'\');closeModal()">📷 '+(e.photo?'Replace':'Add')+' proof photo</button>'+
+    (e.photo?proofImage(e.photo,'Proof from '+k):'')+
+    '<button class="cta ghost" onclick="pickPhoto(\''+h.id+'\',\''+k+'\')">📷 '+(e.photo?'Replace':'Add')+' proof photo</button>'+
+    (e.photo?'<button class="pillbtn" onclick="removePhoto(\''+h.id+'\',\''+k+'\')">Remove photo</button>':'')+
     '<button class="cta ghost" style="margin-left:8px" onclick="markRest(\''+h.id+'\',\''+k+'\')">😌 Rest day</button>'+
     '<p class="tiny" style="margin-top:10px">A rest day pauses your streak instead of breaking it — planned time off beats guilt.</p>'+
     '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Close</button>'+
@@ -541,7 +558,7 @@ async function saveDay(id,k){
 }
 
 /* ---------------- modal / chrome ---------------- */
-function modal(html){ el('modalRoot').innerHTML='<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal"><div id="modalStoreNote"></div>'+html+'</div></div>'; }
+function modal(html){ el('modalRoot').innerHTML='<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal"><div id="modalStoreNote"></div>'+html+'</div></div>'; hydrateProofPhotos(); }
 function closeModal(){ el('modalRoot').innerHTML=''; }
 
 el('tabs').addEventListener('click',function(e){
