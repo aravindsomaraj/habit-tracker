@@ -569,5 +569,13 @@ el('themeBtn').onclick=function(){
 };
 try{var st=localStorage.getItem('sl_theme'); if(st) document.documentElement.setAttribute('data-theme',st);}catch(_){}
 
-render();
-boot();
+// Auth owns startup. Habits stay in memory until database integration is added.
+function resetTrackerSession(){
+  Object.keys(unsubs).forEach(function(id){unsubs[id]();});
+  unsubs={}; DB=null; ASSETS=null; storeReady=false;
+  habits=[]; entries={}; selected=null;
+  view='today'; calCursor=new Date(); flipAxes=false; draft={t:'steps'};
+  closeModal();
+  noteStore('Habits are temporary for now. They reset when you reload or log out.');
+  render();
+}

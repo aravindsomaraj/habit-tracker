@@ -23,6 +23,12 @@
   --brand-soft:#1e3312; --violet-soft:#281d47; --blue-soft:#10293c; --amber-soft:#332a08; --pink-soft:#3a1424;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
+.auth-wrap{max-width:480px;padding-top:60px}
+.auth-wrap h1{font-size:24px;margin-bottom:8px}
+.auth-wrap fieldset{border:0;padding:0;margin:0;min-width:0}
+.auth-wrap .pillbtn{margin-top:16px}
+button:disabled{opacity:.6;cursor:wait}
 body{
   margin:0; background:var(--bg); color:var(--ink);
   font-family:'Nunito', ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;

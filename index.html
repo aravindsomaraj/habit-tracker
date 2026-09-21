@@ -10,14 +10,33 @@
 <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
-<div class="wrap">
+<section class="wrap auth-wrap" id="authScreen" aria-labelledby="authTitle">
+  <div class="card">
+    <div class="logo"><span class="mark">🔥</span> Habit Tracker</div>
+    <h1 id="authTitle">Welcome back</h1>
+    <p class="sub" id="authDescription">Log in to your account.</p>
+    <p class="banner" id="authMessage" role="status" aria-live="polite">Checking your session…</p>
+    <form id="authForm">
+      <fieldset id="authFields" disabled>
+        <label class="f"><span>Email</span><input id="authEmail" type="email" autocomplete="email" required></label>
+        <label class="f"><span>Password</span><input id="authPassword" type="password" autocomplete="current-password" required></label>
+        <button class="cta" id="authSubmit" type="submit">Log in</button>
+        <button class="pillbtn" id="authSwitch" type="button">Create an account</button>
+      </fieldset>
+    </form>
+    <noscript>Enable JavaScript to sign in and use Habit Tracker.</noscript>
+  </div>
+</section>
+<div class="wrap" id="appScreen" hidden>
   <header class="top">
     <div class="logo"><span class="mark">🔥</span> Habit Tracker</div>
     <div class="spacer"></div>
     <button class="pillbtn" id="themeBtn">🌗 Theme</button>
     <button class="cta" id="newBtn">+ New habit</button>
+    <button class="pillbtn" id="logoutBtn">Log out</button>
   </header>
 
+  <p class="banner" id="accountMessage" role="status" aria-live="polite" hidden></p>
   <div id="storeNote"></div>
 
   <nav class="tabs" id="tabs">
@@ -35,7 +54,11 @@
 <div id="modalRoot"></div>
 
 <!-- Classic scripts preserve the existing inline event handlers. Order matters. -->
+<script src="config.local.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase-client.js"></script>
 <script src="assets/js/storage.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/auth.js"></script>
 </body>
 </html>
