@@ -1,10 +1,10 @@
 // Opt-in accountability features. Social records never include values, notes, or proof photos.
 var socialGeneration=0, socialReady=false, socialLoading=false, socialError='', socialProfile=null;
 var socialFriends=[], socialRequests=[], socialFeed=[], socialShares=[];
-var chatConversationId=null, chatFriendName='', chatChannel=null;
+var chatConversationId=null, chatFriendName='', chatChannel=null, chatInboxChannel=null, unreadConversations={};
 
 function resetSocialSession(){
-  stopChatSubscription(); chatConversationId=null; chatFriendName='';
+  stopChatSubscription(); stopInboxSubscription(); chatConversationId=null; chatFriendName=''; unreadConversations={}; updateChatBadge();
   socialGeneration++; socialReady=false; socialLoading=false; socialError=''; socialProfile=null;
   socialFriends=[]; socialRequests=[]; socialFeed=[]; socialShares=[];
   var generation=socialGeneration;
@@ -84,6 +84,7 @@ async function loadSocial(generation){
     var actors={};(actorsResult.data||[]).forEach(function(person){actors[person.id]=person;});
     socialFeed=feed.map(function(row){row.person=actors[row.actor_id];return row;}).filter(function(row){return row.person;});
     socialReady=true;
+    startInboxSubscription();
   }catch(error){
     if(generation===socialGeneration) socialError='Social features require the social database migration. '+(error.message||'Please try again.');
   }finally{
@@ -144,7 +145,7 @@ async function openChat(friendId){
     var friendName=friend.display_name;
     var client=window.getSupabaseClient(), result=await client.rpc('start_direct_conversation',{friend_id:friendId});
     if(result.error) throw result.error;
-    chatConversationId=result.data; chatFriendName=friendName;
+    chatConversationId=result.data; chatFriendName=friendName; delete unreadConversations[chatConversationId]; updateChatBadge();
     modal('<div class="chat-head"><div><h3>Chat with '+esc(friendName)+'</h3><p class="sub">Only you and '+esc(friendName)+' can read these messages.</p></div><button class="pillbtn" onclick="closeModal()">Close</button></div><div id="chatMessages" class="chat-messages" role="log" aria-live="polite"><p class="tiny">Loading messages…</p></div><form class="chat-compose" onsubmit="sendChatMessage();return false;"><input id="chatInput" maxlength="2000" autocomplete="off" placeholder="Write a message" required><button class="cta" type="submit">Send</button></form>');
     await loadChatMessages(); startChatSubscription();
   }catch(error){socialMessage(error.message||'Could not open this chat.');}
@@ -193,6 +194,27 @@ function stopChatSubscription(){
   if(chatChannel){window.getSupabaseClient().removeChannel(chatChannel);chatChannel=null;}
 }
 function closeChat(){stopChatSubscription();chatConversationId=null;chatFriendName='';}
+function startInboxSubscription(){
+  stopInboxSubscription();
+  if(!socialProfile) return;
+  var client=window.getSupabaseClient();
+  chatInboxChannel=client.channel('chat-inbox:'+socialProfile.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'},function(payload){
+    var message=payload.new;
+    if(!message||message.sender_id===socialProfile.id) return;
+    if(message.conversation_id===chatConversationId){appendChatMessage(message);return;}
+    unreadConversations[message.conversation_id]=true; updateChatBadge();
+    var friend=socialFriends.filter(function(row){return row.id===message.sender_id;})[0];
+    if(typeof toast==='function') toast('New message from '+(friend?friend.display_name:'a friend'));
+  }).subscribe();
+}
+function stopInboxSubscription(){
+  if(chatInboxChannel){window.getSupabaseClient().removeChannel(chatInboxChannel);chatInboxChannel=null;}
+}
+function updateChatBadge(){
+  var badge=el('chatUnreadBadge'),count=Object.keys(unreadConversations).length;
+  if(!badge) return;
+  badge.textContent=count>9?'9+':String(count); badge.hidden=!count;
+}
 function openSharing(){
   var friendIds={};socialFriends.forEach(function(friend){friendIds[friend.id]=friend;});
   var html='<h3>Share completion updates</h3><p class="sub">Choose which friends can see a habit being marked complete. Nothing else is shared.</p>';

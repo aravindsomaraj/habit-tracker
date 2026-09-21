@@ -55,6 +55,7 @@ header.top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap
 nav.tabs{display:flex;gap:8px;background:var(--panel);border:2px solid var(--line);padding:6px;border-radius:16px;margin-bottom:18px;overflow-x:auto}
 nav.tabs button{padding:10px 16px;border-radius:12px;font-size:14px;color:var(--muted);white-space:nowrap}
 nav.tabs button.on{background:var(--brand-soft);color:var(--brand-dark)}
+.tab-badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;margin-left:3px;border-radius:99px;background:var(--pink);color:#fff;font-size:10px;font-weight:900;vertical-align:1px}
 :root[data-theme="dark"] nav.tabs button.on, :root:not([data-theme="light"]) nav.tabs button.on{color:var(--brand)}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]) nav.tabs button.on{color:var(--brand-dark)}}
 
