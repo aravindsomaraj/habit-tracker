@@ -34,9 +34,9 @@ function friendInviteView(){
 function friendRequestsView(received,sent){
   var html='<div class="card"><h2>Friends</h2>';
   if(!socialFriends.length) html+='<p class="sub">No accepted friends yet.</p>';
-  else html+='<div class="social-list">'+socialFriends.map(function(friend){return '<div><b>'+esc(friend.display_name)+'</b><span>@'+esc(friend.handle)+'</span></div>';}).join('')+'</div>';
-  if(received.length){html+='<h3 class="social-heading">Requests for you</h3><div class="social-list">'+received.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><button class="pillbtn" onclick="acceptFriendRequest(\''+row.id+'\')">Accept</button></div>';}).join('')+'</div>';}
-  if(sent.length){html+='<h3 class="social-heading">Sent</h3><div class="social-list">'+sent.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><em>Pending</em></div>';}).join('')+'</div>';}
+  else html+='<div class="social-list">'+socialFriends.map(function(friend){return '<div><b>'+esc(friend.display_name)+'</b><span>@'+esc(friend.handle)+'</span><span class="social-actions"><button class="pillbtn" onclick="removeFriendship(\''+friend.friendship_id+'\')">Remove</button><button class="pillbtn danger-outline" onclick="blockFriendship(\''+friend.friendship_id+'\')">Block</button></span></div>';}).join('')+'</div>';
+  if(received.length){html+='<h3 class="social-heading">Requests for you</h3><div class="social-list">'+received.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><span class="social-actions"><button class="pillbtn" onclick="acceptFriendRequest(\''+row.id+'\')">Accept</button><button class="pillbtn danger-outline" onclick="blockFriendship(\''+row.id+'\')">Block</button></span></div>';}).join('')+'</div>';}
+  if(sent.length){html+='<h3 class="social-heading">Sent</h3><div class="social-list">'+sent.map(function(row){return '<div><b>'+esc(row.person.display_name)+'</b><span>@'+esc(row.person.handle)+'</span><button class="pillbtn" onclick="removeFriendship(\''+row.id+'\')">Cancel</button></div>';}).join('')+'</div>';}
   return html+'</div>';
 }
 function sharingView(){
@@ -69,7 +69,7 @@ async function loadSocial(generation){
     var peopleResult=ids.length?await client.from('profiles').select('id,handle,display_name').in('id',ids):{data:[],error:null};
     if(peopleResult.error) throw peopleResult.error;
     var people={};(peopleResult.data||[]).forEach(function(person){people[person.id]=person;});
-    socialFriends=rows.filter(function(row){return row.status==='accepted';}).map(function(row){return people[row.requester_id===user.id?row.addressee_id:row.requester_id];}).filter(Boolean);
+    socialFriends=rows.filter(function(row){return row.status==='accepted';}).map(function(row){var person=people[row.requester_id===user.id?row.addressee_id:row.requester_id];if(person) person=Object.assign({},person,{friendship_id:row.id});return person;}).filter(Boolean);
     socialRequests=rows.filter(function(row){return row.status==='pending';}).map(function(row){row.person=people[row.requester_id===user.id?row.addressee_id:row.requester_id];return row;}).filter(function(row){return row.person;});
     var sharesResult=await client.from('habit_shares').select('habit_id,viewer_id').eq('owner_id',user.id);
     if(sharesResult.error) throw sharesResult.error;
@@ -118,6 +118,22 @@ async function acceptFriendRequest(id){
     if(result.error) throw result.error;
     await loadSocialAfterWrite('Friend request accepted.');
   }catch(error){socialMessage(error.message||'Could not accept the friend request.');}
+}
+async function removeFriendship(id){
+  if(!confirm('Remove this connection? All sharing between you will also be removed.')) return;
+  try{
+    var result=await window.getSupabaseClient().rpc('remove_friendship',{friendship_id:id});
+    if(result.error) throw result.error;
+    await loadSocialAfterWrite('Friend removed and sharing cleared.');
+  }catch(error){socialMessage(error.message||'Could not remove this friend.');}
+}
+async function blockFriendship(id){
+  if(!confirm('Block this person? They cannot send another request, and all sharing between you will be removed.')) return;
+  try{
+    var result=await window.getSupabaseClient().rpc('block_friendship',{friendship_id:id});
+    if(result.error) throw result.error;
+    await loadSocialAfterWrite('Person blocked and sharing cleared.');
+  }catch(error){socialMessage(error.message||'Could not block this person.');}
 }
 function openSharing(){
   var friendIds={};socialFriends.forEach(function(friend){friendIds[friend.id]=friend;});

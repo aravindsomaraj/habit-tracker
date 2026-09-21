@@ -171,6 +171,7 @@ label.f input:focus,label.f select:focus{border-color:var(--blue)}
 .social-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:10px 0;border-bottom:2px solid var(--line)}
 .social-list>div:last-child{border-bottom:0}
 .social-list b{font-size:14px}.social-list span{font-size:12px;color:var(--muted);font-weight:700}.social-list button,.social-list em{grid-row:1 / span 2;grid-column:2}.social-list em{font-size:12px;color:var(--muted);font-weight:800}
+.social-list .social-actions{grid-row:1 / span 2;grid-column:2;display:flex;gap:6px;align-items:center}.social-list .social-actions button{grid-row:auto;grid-column:auto}.danger-outline{border-color:var(--pink)!important;color:var(--pink)!important}
 .social-heading{font-size:14px;margin:16px 0 6px}.social-summary{font-size:24px;font-weight:900;margin:8px 0 14px}
 .social-feed{display:grid;gap:10px}.social-feed>div{display:flex;gap:10px;align-items:center;padding:10px;border:2px solid var(--line);border-radius:14px;background:var(--panel-2)}
 .social-feed p{margin:0;font-size:14px}.social-feed small{display:block;color:var(--muted);font-weight:700;margin-top:2px}.social-avatar{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--brand-soft);color:var(--brand-dark);font-weight:900}

@@ -130,6 +130,11 @@ these database policies, and do not expose a service-role key in the browser.
 The migration assumes the existing `public.habits.id` and `auth.users.id` are
 UUIDs, as required by the current tracker schema.
 
+After the initial social migration, apply
+`database/migrations/20260922_add_friend_controls.sql` to enable cancelling
+requests, removing friends, and blocking. Both remove and block also delete
+every sharing rule between the two accounts.
+
 ## Private proof photos
 
 The existing private `proof-photos` bucket and Storage policies are required.
