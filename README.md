@@ -65,11 +65,12 @@ No project settings, schema, SQL, or RLS policies were changed by this task.
 ## GitHub Pages deployment
 
 Commit `config.js` with the application files; production no longer needs an
-ignored file or a build step. Keep `CNAME` as `habittrackerapp.online`. In GitHub
-Pages settings, publish the intended branch/root, confirm the custom domain,
-and enable Enforce HTTPS once the certificate is available. See
-[GitHub Pages HTTPS guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https).
-No deployment or repository settings were changed by this pass.
+ignored file or a build step. The tracked GitHub Actions workflow deploys the
+repository root to GitHub Pages after every push to `main` (and supports manual
+runs from the Actions tab). In GitHub Pages settings, set the publishing source
+to **GitHub Actions** once, confirm the custom domain, and enable Enforce HTTPS
+once the certificate is available. Keep `CNAME` as `habittrackerapp.online`.
+See [GitHub Pages HTTPS guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https).
 
 Before deployment, verify the Supabase Site URL and allowed redirects above.
 After deployment, check that `/config.js` and every referenced asset return 200,
