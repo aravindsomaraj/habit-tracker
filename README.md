@@ -6,13 +6,14 @@ Track habits. Author: Madhav Dih Nair.
 
 ```text
 index.html                 Page markup and script entry points
+config.js                  Public production Supabase configuration
 CNAME                      Existing custom-domain configuration
 assets/
   css/styles.css           Styling
   js/app.js                State, calculations, views, and event handlers
   js/storage.js            Supabase habit/entry loading and writes
   js/photos.js             Private proof-photo uploads, cleanup, and signed display
-  js/supabase-client.js    Supabase browser client using window.APP_CONFIG
+  js/supabase-client.js     Supabase browser client using window.APP_CONFIG
   js/auth.js               Signup, login, logout, and session-based UI
   images/                  Cat mood illustrations
 server/                    Future authenticated API (see README)
@@ -34,10 +35,14 @@ http://localhost:8000. This serves the static frontend only.
 
 The official Supabase JS v2 browser client loads from the
 [documented CDN](https://supabase.com/docs/reference/javascript/installing).
-`config.local.js` must define `window.APP_CONFIG.SUPABASE_URL` and
+`config.js` defines `window.APP_CONFIG.SUPABASE_URL` and
 `window.APP_CONFIG.SUPABASE_PUBLISHABLE_KEY`. Only `sb_publishable_...` keys are
 accepted. Never put a secret or service-role key in browser configuration.
-The existing config file stays gitignored and its values are not in tracked code.
+The tracked config contains exactly those two browser-public values, copied from
+the existing local configuration. `config.local.js` remains ignored and is not
+loaded. Both local development and GitHub Pages use `config.js`.
+Malformed configuration or a missing CDN client leaves the app hidden and shows
+an actionable error.
 
 Email/password signup and login share an auth form. Confirmation-required signup
 shows a check-your-email message. Existing sessions restore on reload; auth
@@ -57,18 +62,41 @@ with Supabase's hosted verification link, not a custom server callback route.
 See [Supabase redirect setup](https://supabase.com/docs/guides/auth/redirect-urls).
 No project settings, schema, SQL, or RLS policies were changed by this task.
 
-For GitHub Pages, supply `config.local.js` separately in the deployed artifact
-(for example, through a deployment step). A branch-only deployment will not
-include the ignored local file. Do not commit it or remove its ignore rule.
-This file is public when served; the publishable key is intended for browser use.
-No deployment workflow is added in this task.
+## GitHub Pages deployment
+
+Commit `config.js` with the application files; production no longer needs an
+ignored file or a build step. Keep `CNAME` as `habittrackerapp.online`. In GitHub
+Pages settings, publish the intended branch/root, confirm the custom domain,
+and enable Enforce HTTPS once the certificate is available. See
+[GitHub Pages HTTPS guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https).
+No deployment or repository settings were changed by this pass.
+
+Before deployment, verify the Supabase Site URL and allowed redirects above.
+After deployment, check that `/config.js` and every referenced asset return 200,
+then run the manual checks below on `https://habittrackerapp.online` in a fresh
+browser session. Localhost and production have separate browser session storage.
+
+## Repeatable mock checks
+
+Run the local static server, then open
+http://localhost:8000/tests/reliability.html. The test page fetches local sources
+and uses fake auth, database, and Storage clients; it never loads production
+config or calls Supabase. No dependencies or build tools are required. It covers
+signup/confirmation, login/logout, restoration, invalid configuration, duplicate
+requests, database reads/writes, photo cleanup, signed URL renewal, failures,
+account changes, loading UI, and HTML escaping.
+
+The existing UI creates/deletes habit definitions and updates daily entries;
+it does not offer an editor for an existing habit's name/goal/duration. This
+reliability pass does not add one. Verify the existing workflows below manually;
+mock checks do not establish live browser, RLS, or network correctness.
 
 ## Database persistence
 
 The existing tracker reset hook loads the signed-in user's `habits`, then their
 `habit_entries`, through `assets/js/storage.js`. Reads are paginated; there is
 no Realtime subscription. Reload to see changes made in another browser/tab.
-Auth implementation, configuration, database schema, and RLS remain unchanged.
+Database schema and RLS remain unchanged.
 
 Habit inserts include the authenticated `user_id` and omit `id` so PostgreSQL
 generates it. Entry upserts also omit `id` and use the existing unique constraint
@@ -81,12 +109,13 @@ to/from `created_at`, and entry `ts` to/from `updated_at`. Dates retain their
 `YYYY-MM-DD` calendar representation. Numeric values and nulls are preserved.
 Only supported schema fields are sent; notes are not persisted. `photo_path` maps
 to the existing in-memory `photo` field and contains only a Storage object path.
-Ordinary daily edits do not overwrite `photo_path`.
+Writes send only explicitly changed fields: ordinary daily edits do not overwrite
+`photo_path`, and photo changes do not overwrite newer daily values from another tab.
 
 ## Private proof photos
 
-The existing private `proof-photos` bucket and Storage policies are required;
-this task does not create or change buckets, policies, schema, or authentication.
+The existing private `proof-photos` bucket and Storage policies are required.
+The app does not create or change buckets, policies, or schema.
 Use the camera button on Today or in a calendar day to upload/replace an image.
 The Proof gallery and day editor both offer removal. JPEG, PNG, and WebP files
 are accepted, with a client-side limit of 5 MiB (5 × 1024 × 1024 bytes).
@@ -126,7 +155,7 @@ and user-specific memory is cleared. A failed initial load requires a reload.
 The older `server/` and `database/` planning documents
 are historical scaffolding, not instructions to create a server or change schema.
 
-## Manual verification
+## Manual production verification
 
 1. Open the site logged out: only the auth screen should appear.
 2. Sign up: check for the confirmation message, follow the email link, then log in.
@@ -140,10 +169,16 @@ are historical scaffolding, not instructions to create a server or change schema
 7. Delete a habit and reload: the habit and its entries should be gone.
 8. Simulate a failed save: no completion toast should appear, existing data should
    remain intact, and a visible error should explain the failure.
-
 9. Upload JPEG/PNG/WebP proofs, reload, and check both gallery and day previews.
 10. Reject GIFs and files over 5 MiB. Replace a proof, then remove it; inspect the
     bucket and entry to verify object cleanup and a path-only database value.
 11. Simulate upload, signing, deletion, and database-update failures. Verify visible
     errors, cleanup attempts after failed photo saves, and no premature habit delete.
 12. Delete a habit with photos: its objects should disappear before the habit row.
+13. Repeat rapid clicks and offline failures; confirm controls recover and no
+    unhandled Promise rejection appears in the browser console. During a slow
+    session restore, the tracker must stay hidden. During data loading, show
+    loading text rather than an empty-habits prompt.
+14. Leave a photo open past the signed URL refresh window, then test retry after
+    disconnecting/reconnecting. Log out while operations are pending and verify
+    that the next account sees no stale photos, habits, or notifications.

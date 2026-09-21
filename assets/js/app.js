@@ -120,6 +120,7 @@ function render(){
   Array.prototype.forEach.call(document.querySelectorAll('#tabs button'),function(b){
     b.classList.toggle('on', b.dataset.v===view);
   });
+  if(!storeReady){ v.innerHTML='<div class="card"><p class="sub">Loading your habits…</p></div>'; return; }
   if(!habits.length){ v.innerHTML=emptyState(); return; }
   if(view==='today') v.innerHTML=todayView();
   else if(view==='progress') v.innerHTML=picker()+progressView();
@@ -138,7 +139,7 @@ function cur(){ return habits.filter(function(h){return h.id===selected;})[0]||h
 function picker(){
   if(habits.length<2) return '';
   return '<div class="sel">'+habits.map(function(h){
-    return '<button class="'+(h.id===selected?'on':'')+'" onclick="pick(\''+h.id+'\')">'+h.emoji+' '+esc(h.name)+'</button>';
+    return '<button class="'+(h.id===selected?'on':'')+'" onclick="pick(\''+h.id+'\')">'+esc(h.emoji)+' '+esc(h.name)+'</button>';
   }).join('')+'</div>';
 }
 function pick(id){selected=id;render();}
@@ -228,7 +229,7 @@ function catLine(mood,done,total){
 }
 function badgeShelf(){
   var h=cur(), s=stats(h);
-  return '<div class="card"><h2>🏆 Trophies — '+h.emoji+' '+esc(h.name)+'</h2><p class="sub">Unlocked as you go. Switch habits on the Progress tab.</p>'+
+  return '<div class="card"><h2>🏆 Trophies — '+esc(h.emoji)+' '+esc(h.name)+'</h2><p class="sub">Unlocked as you go. Switch habits on the Progress tab.</p>'+
     '<div class="badges">'+BADGES.map(function(b){
       var got=b.test(s,h);
       return '<div class="badge '+(got?'got':'')+'"><div class="b">'+(got?b.icon:'🔒')+'</div><small>'+b.t+'</small></div>';
@@ -267,18 +268,19 @@ function card(h,task,e,idx,tgt,tk){
       '<button class="iconbtn" title="Upload proof photo" onclick="pickPhoto(\''+h.id+'\',\''+tk+'\')">'+(e&&e.photo?'🖼️':'📷')+'</button>'+
       '<button class="tick '+(done?'done':'')+'" onclick="toggle(\''+h.id+'\',\''+tk+'\','+(tgt||0)+')">'+(done?'✓':'')+'</button>';
   }
-  return '<div class="hrow"><div class="emoji">'+h.emoji+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
+  return '<div class="hrow"><div class="emoji">'+esc(h.emoji)+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
     '<div class="task">'+esc(task)+'</div></div>'+controls+'</div>';
 }
 function logValue(id,k,v){var h=byId(id);saveEntry(h,k,{value:v===''?null:+v});}
 function logMetric(id,k,v){var h=byId(id);saveEntry(h,k,{metric:v===''?null:+v});}
 function toggle(id,k,tgt){
+  var generation=storageGeneration;
   var h=byId(id),e=entryOf(h,k)||{};
   var patch={done:!e.done, rest:false};
   if(!e.done && (e.value==null)) patch.value=tgt;
   var wasDone=!!e.done;
   saveEntry(h,k,patch).then(function(saved){
-    if(!saved||wasDone) return;
+    if(!saved||wasDone||generation!==storageGeneration) return;
     var s=stats(h), bonus=(patch.value!=null&&patch.value>=tgt);
     confetti();
     if(s.streak&&s.streak%7===0) toast('🔥 '+s.streak+'-day streak!');
@@ -288,8 +290,8 @@ function toggle(id,k,tgt){
   });
 }
 async function markRest(id,k){
-  var h=byId(id);
-  if(await saveEntry(h,k,{done:false,rest:true})){
+  var h=byId(id),generation=storageGeneration;
+  if(await saveEntry(h,k,{done:false,rest:true}) && generation===storageGeneration){
     closeModal(); toast('😌 Rest day — streak protected');
   }
 }
@@ -304,14 +306,15 @@ function pickPhoto(id,k){
   input.onchange=async function(){
     if(generation!==storageGeneration) return;
     var file=input.files&&input.files[0];
-    if(file&&await uploadProofPhoto(h,k,file)) closeModal();
+    if(file&&await uploadProofPhoto(h,k,file)&&generation===storageGeneration) closeModal();
   };
   input.click();
 }
 
 async function removePhoto(id,k){
+  var generation=storageGeneration;
   if(!confirm('Remove this proof photo?')) return;
-  if(await removeProofPhoto(byId(id),k)) closeModal();
+  if(await removeProofPhoto(byId(id),k)&&generation===storageGeneration) closeModal();
 }
 
 /* -- progress -- */
@@ -327,7 +330,7 @@ function progressView(){
       '<div style="flex:1"><div class="t">'+esc(p.label)+'</div><div class="d">'+esc(p.dates)+' · '+hit+'/'+(p.to-p.from+1)+' days done</div>'+
       '<div class="bar" style="margin-top:8px;height:10px"><i style="width:'+pct(hit,p.to-p.from+1)+'%"></i></div></div></div>';
   }).join('');
-  return '<div class="card"><h2>'+h.emoji+' '+esc(h.name)+'</h2><p class="sub">Goal: '+fmt(h.target)+' '+esc(h.unit)+' a day for '+h.days+' days · started '+dayLabel(parseKey(h.start))+'</p>'+
+  return '<div class="card"><h2>'+esc(h.emoji)+' '+esc(h.name)+'</h2><p class="sub">Goal: '+fmt(h.target)+' '+esc(h.unit)+' a day for '+h.days+' days · started '+dayLabel(parseKey(h.start))+'</p>'+
     '<div class="grid two"><div style="display:grid;place-items:center">'+ring+'</div>'+
     '<div><div class="statgrid">'+
       stat(s.streak,'day streak')+stat(s.done+'/'+h.days,'days done')+
@@ -401,7 +404,7 @@ function calendarView(){
     '<button class="pillbtn" onclick="moveMonth(-1)">‹</button>'+
     '<h2 style="flex:1;text-align:center;margin:0">'+c.toLocaleDateString('en-IN',{month:'long',year:'numeric'})+'</h2>'+
     '<button class="pillbtn" onclick="moveMonth(1)">›</button></div>'+
-    '<p class="sub" style="text-align:center">'+h.emoji+' '+esc(h.name)+' — tap any past day to fill it in.</p>'+
+    '<p class="sub" style="text-align:center">'+esc(h.emoji)+' '+esc(h.name)+' — tap any past day to fill it in.</p>'+
     '<div class="cal">'+cells+'</div>'+
     '<div class="callegend"><span><i style="background:var(--brand)"></i>Done</span>'+
     '<span><i style="background:var(--amber)"></i>Partial</span>'+
@@ -479,7 +482,7 @@ function proofView(){
   var h=cur(), E=entries[h.id]||{};
   var ks=Object.keys(E).filter(function(k){return E[k].photo;}).sort();
   if(!ks.length) return '<div class="card"><h2>Proof shots</h2><p class="sub">Upload progress pics from the Today tab or a calendar day — body shots, finished pages, posted reels.</p><div class="empty"><div class="big">📸</div>Nothing uploaded yet</div></div>';
-  return '<div class="card"><h2>'+h.emoji+' Proof shots</h2><p class="sub">'+ks.length+' uploads · oldest to newest</p><div class="gal">'+
+  return '<div class="card"><h2>'+esc(h.emoji)+' Proof shots</h2><p class="sub">'+ks.length+' uploads · oldest to newest</p><div class="gal">'+
     ks.map(function(k){var e=E[k];
       return '<figure>'+proofImage(e.photo,'Proof from '+k)+
         '<figcaption>'+dayLabel(parseKey(k))+(e.value!=null?'<br>'+fmt(e.value)+' '+esc(h.unit):'')+'</figcaption>'+
@@ -491,7 +494,7 @@ function proofView(){
 function manageView(){
   return '<div class="card"><h2>Your habits</h2><p class="sub">Finished a goal or want to drop one? Delete it here — daily entries and proof photos go with it.</p>'+
     habits.map(function(h){var s=stats(h);
-      return '<div class="hrow"><div class="emoji">'+h.emoji+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
+      return '<div class="hrow"><div class="emoji">'+esc(h.emoji)+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
       '<div class="task">'+fmt(h.target)+' '+esc(h.unit)+'/day · '+h.days+' days · '+s.done+' done · '+pct(s.done,h.days)+'% complete · '+s.xp+' pts</div>'+
       '<div class="bar" style="margin-top:8px;height:10px"><i style="width:'+pct(s.done,h.days)+'%"></i></div></div>'+
       '<button class="cta danger" onclick="confirmDelete(\''+h.id+'\')">Delete</button></div>';
@@ -504,7 +507,7 @@ function confirmDelete(id){
     '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Keep it</button>'+
     '<button class="cta danger" onclick="doDelete(\''+id+'\')">Delete forever</button></div>');
 }
-async function doDelete(id){ if(await removeHabit(byId(id))) closeModal(); }
+async function doDelete(id){ var generation=storageGeneration;if(await removeHabit(byId(id))&&generation===storageGeneration) closeModal(); }
 
 /* ---------------- new habit ---------------- */
 var draft={t:'steps'};
@@ -526,6 +529,7 @@ function openNew(){
    '<button class="cta" onclick="createHabit()">Create plan</button></div>');
 }
 async function createHabit(){
+  var generation=storageGeneration;
   var name=(el('f_name').value||'').trim()||'My habit';
   var h={
     name:name, emoji:(el('f_emoji').value||'🎯').trim()||'🎯',
@@ -534,14 +538,14 @@ async function createHabit(){
     start:el('f_start').value||key(today()),
     metric:(el('f_metric').value||'value').trim(),
     ramp:el('f_ramp').checked };
-  if(await saveHabit(h)) closeModal();
+  if(await saveHabit(h)&&generation===storageGeneration) closeModal();
 }
 
 /* -- day editor -- */
 function openDay(k){
   var h=cur(), e=entryOf(h,k)||{}, idx=idxOf(h,k);
   modal('<h3>'+parseKey(k).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})+'</h3>'+
-    '<p class="sub">'+h.emoji+' '+esc(h.name)+' · day '+(idx+1)+' target '+fmt(targetFor(h,idx))+' '+esc(h.unit)+'</p>'+
+    '<p class="sub">'+esc(h.emoji)+' '+esc(h.name)+' · day '+(idx+1)+' target '+fmt(targetFor(h,idx))+' '+esc(h.unit)+'</p>'+
     '<div class="row2"><label class="f"><span>'+esc(h.unit)+' done</span><input id="d_val" type="number" value="'+esc(e.value!=null?e.value:'')+'"></label>'+
     '<label class="f"><span>'+esc(h.metric)+'</span><input id="d_met" type="number" value="'+esc(e.metric!=null?e.metric:'')+'"></label></div>'+
     (e.photo?proofImage(e.photo,'Proof from '+k):'')+
@@ -553,8 +557,9 @@ function openDay(k){
     '<button class="cta" onclick="saveDay(\''+h.id+'\',\''+k+'\')">'+(e.done?'Update':'Mark done')+'</button></div>');
 }
 async function saveDay(id,k){
+  var generation=storageGeneration;
   var h=byId(id), v=el('d_val').value, m=el('d_met').value;
-  if(await saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true,rest:false})) closeModal();
+  if(await saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true,rest:false})&&generation===storageGeneration) closeModal();
 }
 
 /* ---------------- modal / chrome ---------------- */

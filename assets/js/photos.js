@@ -141,7 +141,7 @@ async function loadProofImage(img){
     var signed=await signedPhoto(path);
     if(!current()) return;
     img.onload=function(){if(current()){message.hidden=true;img.hidden=false;img.dataset.photoLoading='false';}};
-    img.onerror=function(){delete photoUrls[path];failed(new Error('Check your connection or retry the photo.'));};
+    img.onerror=function(){if(current()){delete photoUrls[path];failed(new Error('Check your connection or retry the photo.'));}};
     img.dataset.photoExpires=String(signed.expires);img.src=signed.url;
   }catch(error){failed(error);}
 }

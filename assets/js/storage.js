@@ -78,6 +78,7 @@ async function boot(generation){
   }catch(error){
     if(generation!==storageGeneration) return;
     storeReady=false; storageLock(false);
+    el('view').innerHTML='<div class="card"><p class="sub">Your habits could not be loaded. Reload to retry.</p></div>';
     noteStore('Could not load your habits. Reload to retry. '+(error.message||'Please check your connection.'));
   }
 }
@@ -124,9 +125,11 @@ function saveEntry(h,dkey,patch){
 }
 // Shared by day edits and photo operations; ordinary edits never overwrite photo_path.
 async function writeEntryRow(client,h,dkey,patch){
-  var next=Object.assign({done:false,rest:false,value:null,metric:null},entryOf(h,dkey)||{},patch);
-  var row={habit_id:h.id,entry_date:dkey,done:next.done,rest:next.rest,
-    value:next.value,metric:next.metric,updated_at:new Date().toISOString()};
+  var row={habit_id:h.id,entry_date:dkey,updated_at:new Date().toISOString()};
+  // Send only changed fields so a stale tab/photo edit cannot reset other values.
+  ['done','rest','value','metric'].forEach(function(field){
+    if(Object.prototype.hasOwnProperty.call(patch,field)) row[field]=patch[field];
+  });
   if(Object.prototype.hasOwnProperty.call(patch,'photo')) row.photo_path=patch.photo;
   var result=await client.from('habit_entries').upsert(row,
     {onConflict:'habit_id,entry_date',defaultToNull:false}).select(ENTRY_COLUMNS).single();

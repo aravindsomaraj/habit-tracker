@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Habit Tracker reliability checks</title>
+<h1>Mock regression checks</h1>
+<p>This page fetches local source files. It does not load production config or contact Supabase.</p>
+<pre id="result" role="status">Running…</pre>
+<script src="reliability-checks.js"></script>
+<script>
+(async function(){
+  var result=document.getElementById('result');
+  try{
+    var names=['app.js','storage.js','photos.js','auth.js','supabase-client.js'];
+    var files=await Promise.all(names.map(async function(name){
+      var response=await fetch('../assets/js/'+name,{cache:'no-store'});
+      if(!response.ok) throw new Error('Could not read '+name);
+      return [name,await response.text()];
+    }));
+    result.textContent=await window.runReliabilityChecks(Object.fromEntries(files));
+  }catch(error){result.textContent='FAIL: '+error.stack;}
+})();
+</script>
+</html>
