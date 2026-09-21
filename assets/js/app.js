@@ -121,7 +121,8 @@ function render(){
     b.classList.toggle('on', b.dataset.v===view);
   });
   if(!storeReady){ v.innerHTML='<div class="card"><p class="sub">Loading your habits…</p></div>'; return; }
-  if(!habits.length){ v.innerHTML=emptyState(); return; }
+  if(view==='social') v.innerHTML=socialView();
+  else if(!habits.length){ v.innerHTML=emptyState(); return; }
   if(view==='today') v.innerHTML=todayView();
   else if(view==='progress') v.innerHTML=picker()+progressView();
   else if(view==='calendar') v.innerHTML=picker()+calendarView();
@@ -280,7 +281,12 @@ function toggle(id,k,tgt){
   if(!e.done && (e.value==null)) patch.value=tgt;
   var wasDone=!!e.done;
   saveEntry(h,k,patch).then(function(saved){
-    if(!saved||wasDone||generation!==storageGeneration) return;
+    if(!saved||generation!==storageGeneration) return;
+    if(wasDone){
+      if(typeof removeSocialCompletion==='function') removeSocialCompletion(h,k);
+      return;
+    }
+    if(typeof recordSocialCompletion==='function') recordSocialCompletion(h,k);
     var s=stats(h), bonus=(patch.value!=null&&patch.value>=tgt);
     confetti();
     if(s.streak&&s.streak%7===0) toast('🔥 '+s.streak+'-day streak!');
@@ -292,6 +298,7 @@ function toggle(id,k,tgt){
 async function markRest(id,k){
   var h=byId(id),generation=storageGeneration;
   if(await saveEntry(h,k,{done:false,rest:true}) && generation===storageGeneration){
+    if(typeof removeSocialCompletion==='function') removeSocialCompletion(h,k);
     closeModal(); toast('😌 Rest day — streak protected');
   }
 }
@@ -559,7 +566,10 @@ function openDay(k){
 async function saveDay(id,k){
   var generation=storageGeneration;
   var h=byId(id), v=el('d_val').value, m=el('d_met').value;
-  if(await saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true,rest:false})&&generation===storageGeneration) closeModal();
+  if(await saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true,rest:false})&&generation===storageGeneration){
+    if(typeof recordSocialCompletion==='function') recordSocialCompletion(h,k);
+    closeModal();
+  }
 }
 
 /* ---------------- modal / chrome ---------------- */
@@ -580,6 +590,7 @@ try{var st=localStorage.getItem('sl_theme'); if(st) document.documentElement.set
 
 // The existing auth hook resets the UI and schedules persistence startup.
 function resetTrackerSession(){
+  if(typeof resetSocialSession==='function') resetSocialSession();
   resetStorageSession();
   habits=[]; entries={}; selected=null;
   view='today'; calCursor=new Date(); flipAxes=false; draft={t:'steps'};

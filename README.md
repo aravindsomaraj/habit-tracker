@@ -13,13 +13,14 @@ assets/
   js/app.js                State, calculations, views, and event handlers
   js/storage.js            Supabase habit/entry loading and writes
   js/photos.js             Private proof-photo uploads, cleanup, and signed display
+  js/social.js             Opt-in profiles, friends, per-habit sharing, and activity feed
   js/supabase-client.js     Supabase browser client using window.APP_CONFIG
   js/auth.js               Signup, login, logout, and session-based UI
   images/                  Cat mood illustrations
 server/                    Future authenticated API (see README)
 database/
   README.md                Data model and integration plan
-  migrations/              Future versioned schema changes
+  migrations/              Versioned schema changes, including social features
 ```
 
 The frontend remains framework-free. Keeping `index.html` at the root preserves
@@ -112,6 +113,22 @@ Only supported schema fields are sent; notes are not persisted. `photo_path` map
 to the existing in-memory `photo` field and contains only a Storage object path.
 Writes send only explicitly changed fields: ordinary daily edits do not overwrite
 `photo_path`, and photo changes do not overwrite newer daily values from another tab.
+
+## Social accountability
+
+The Friends tab is opt-in. Users create a display name and a public handle, send
+and accept friend requests, then choose which friends may see a particular habit's
+completion events. The feed never contains numeric values, notes, missed days,
+or proof-photo paths. Unsharing a habit immediately prevents that friend from
+reading its existing feed records through RLS.
+
+Before deploying the social UI, apply
+`database/migrations/20260922_add_social.sql` using the Supabase CLI or SQL
+Editor. It creates the social tables, indexes, RLS policies, and the narrowly
+scoped `accept_friendship` function. Do not substitute client-side checks for
+these database policies, and do not expose a service-role key in the browser.
+The migration assumes the existing `public.habits.id` and `auth.users.id` are
+UUIDs, as required by the current tracker schema.
 
 ## Private proof photos
 
