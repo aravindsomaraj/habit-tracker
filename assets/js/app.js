@@ -1,9 +1,8 @@
 /* ---------------- state ---------------- */
-var DB=null, ASSETS=null, storeReady=false;
+var storeReady=false;
 var habits=[];              // {id, ...data}
 var entries={};             // habitId -> { 'YYYY-MM-DD': {done,value,photo,note} }
 var view='today', selected=null, calCursor=new Date(), flipAxes=false;
-var unsubs={};
 
 var TEMPLATES=[
   {k:'steps',  label:'🚶 Walking',  emoji:'🚶', unit:'steps',  target:10000, days:90,  metric:'weight (kg)'},
@@ -277,8 +276,8 @@ function toggle(id,k,tgt){
   var patch={done:!e.done, rest:false};
   if(!e.done && (e.value==null)) patch.value=tgt;
   var wasDone=!!e.done;
-  saveEntry(h,k,patch).then(function(){
-    if(wasDone) return;
+  saveEntry(h,k,patch).then(function(saved){
+    if(!saved||wasDone) return;
     var s=stats(h), bonus=(patch.value!=null&&patch.value>=tgt);
     confetti();
     if(s.streak&&s.streak%7===0) toast('🔥 '+s.streak+'-day streak!');
@@ -287,29 +286,17 @@ function toggle(id,k,tgt){
     if(btn){btn.classList.add('pop');setTimeout(function(){btn.classList.remove('pop');},500);}
   });
 }
-function markRest(id,k){
+async function markRest(id,k){
   var h=byId(id);
-  saveEntry(h,k,{done:false,rest:true});
-  closeModal(); toast('😌 Rest day — streak protected');
+  if(await saveEntry(h,k,{done:false,rest:true})){
+    closeModal(); toast('😌 Rest day — streak protected');
+  }
 }
 function byId(id){return habits.filter(function(h){return h.id===id;})[0];}
 
 /* -- photo -- */
 function pickPhoto(id,k){
-  var inp=document.createElement('input'); inp.type='file'; inp.accept='image/png,image/jpeg,image/webp,image/gif';
-  inp.onchange=async function(){
-    var f=inp.files&&inp.files[0]; if(!f) return;
-    if(!ASSETS){ alert('Photo uploads are not available in this view.'); return; }
-    try{
-      var r=await ASSETS.upload(f);
-      var h=byId(id); var prev=entryOf(h,k);
-      if(prev&&prev.photo){ try{ await ASSETS.delete(prev.photo); }catch(_){}}
-      saveEntry(h,k,{photo:r.id});
-    }catch(err){
-      alert(err&&err.code==='too_large'?'That image is too large (20 MB max).':'Upload failed — try again.');
-    }
-  };
-  inp.click();
+  alert('Photo uploads are not available yet.');
 }
 
 /* -- progress -- */
@@ -486,7 +473,7 @@ function proofView(){
 
 /* -- manage -- */
 function manageView(){
-  return '<div class="card"><h2>Your habits</h2><p class="sub">Finished a goal or want to drop one? Delete it here — entries and photos go with it.</p>'+
+  return '<div class="card"><h2>Your habits</h2><p class="sub">Finished a goal or want to drop one? Delete it here — daily entries go with it.</p>'+
     habits.map(function(h){var s=stats(h);
       return '<div class="hrow"><div class="emoji">'+h.emoji+'</div><div class="info"><div class="name">'+esc(h.name)+'</div>'+
       '<div class="task">'+fmt(h.target)+' '+esc(h.unit)+'/day · '+h.days+' days · '+s.done+' done · '+pct(s.done,h.days)+'% complete · '+s.xp+' pts</div>'+
@@ -497,15 +484,16 @@ function manageView(){
 }
 function confirmDelete(id){
   var h=byId(id);
-  modal('<h3>Delete "'+esc(h.name)+'"?</h3><p class="sub">Every daily entry and proof photo for this habit is removed for good.</p>'+
+  modal('<h3>Delete "'+esc(h.name)+'"?</h3><p class="sub">Every daily entry for this habit is removed for good.</p>'+
     '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Keep it</button>'+
     '<button class="cta danger" onclick="doDelete(\''+id+'\')">Delete forever</button></div>');
 }
-function doDelete(id){ closeModal(); removeHabit(byId(id)); }
+async function doDelete(id){ if(await removeHabit(byId(id))) closeModal(); }
 
 /* ---------------- new habit ---------------- */
 var draft={t:'steps'};
 function openNew(){
+  if(!storeReady||storageBusy) return;
   var tpl=TEMPLATES.filter(function(x){return x.k===draft.t;})[0];
   modal('<h3>New habit</h3>'+
    '<div class="chips">'+TEMPLATES.map(function(x){return '<button class="chip '+(x.k===draft.t?'on':'')+'" onclick="draft.t=\''+x.k+'\';openNew()">'+x.label+'</button>';}).join('')+'</div>'+
@@ -521,16 +509,16 @@ function openNew(){
    '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Cancel</button>'+
    '<button class="cta" onclick="createHabit()">Create plan</button></div>');
 }
-function createHabit(){
+async function createHabit(){
   var name=(el('f_name').value||'').trim()||'My habit';
-  var h={ id:'h'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+  var h={
     name:name, emoji:(el('f_emoji').value||'🎯').trim()||'🎯',
     target:Math.max(0.1,+el('f_target').value||1), unit:(el('f_unit').value||'units').trim(),
-    days:Math.max(1,Math.min(730,+el('f_days').value||30)),
+    days:Math.max(1,Math.min(730,Math.round(+el('f_days').value)||30)),
     start:el('f_start').value||key(today()),
     metric:(el('f_metric').value||'value').trim(),
-    ramp:el('f_ramp').checked, createdAt:Date.now() };
-  closeModal(); selected=h.id; view='progress'; saveHabit(h);
+    ramp:el('f_ramp').checked };
+  if(await saveHabit(h)) closeModal();
 }
 
 /* -- day editor -- */
@@ -547,14 +535,13 @@ function openDay(k){
     '<div class="modal-actions"><button class="cta ghost" onclick="closeModal()">Close</button>'+
     '<button class="cta" onclick="saveDay(\''+h.id+'\',\''+k+'\')">'+(e.done?'Update':'Mark done')+'</button></div>');
 }
-function saveDay(id,k){
+async function saveDay(id,k){
   var h=byId(id), v=el('d_val').value, m=el('d_met').value;
-  saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true});
-  closeModal();
+  if(await saveEntry(h,k,{value:v===''?null:+v, metric:m===''?null:+m, done:true,rest:false})) closeModal();
 }
 
 /* ---------------- modal / chrome ---------------- */
-function modal(html){ el('modalRoot').innerHTML='<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal">'+html+'</div></div>'; }
+function modal(html){ el('modalRoot').innerHTML='<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal"><div id="modalStoreNote"></div>'+html+'</div></div>'; }
 function closeModal(){ el('modalRoot').innerHTML=''; }
 
 el('tabs').addEventListener('click',function(e){
@@ -569,13 +556,12 @@ el('themeBtn').onclick=function(){
 };
 try{var st=localStorage.getItem('sl_theme'); if(st) document.documentElement.setAttribute('data-theme',st);}catch(_){}
 
-// Auth owns startup. Habits stay in memory until database integration is added.
+// The existing auth hook resets the UI and schedules persistence startup.
 function resetTrackerSession(){
-  Object.keys(unsubs).forEach(function(id){unsubs[id]();});
-  unsubs={}; DB=null; ASSETS=null; storeReady=false;
+  resetStorageSession();
   habits=[]; entries={}; selected=null;
   view='today'; calCursor=new Date(); flipAxes=false; draft={t:'steps'};
   closeModal();
-  noteStore('Habits are temporary for now. They reset when you reload or log out.');
+  noteStore('');
   render();
 }

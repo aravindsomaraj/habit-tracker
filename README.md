@@ -10,7 +10,7 @@ CNAME                      Existing custom-domain configuration
 assets/
   css/styles.css           Styling
   js/app.js                State, calculations, views, and event handlers
-  js/storage.js            Persistence functions
+  js/storage.js            Supabase habit/entry loading and writes
   js/supabase-client.js    Supabase browser client using window.APP_CONFIG
   js/auth.js               Signup, login, logout, and session-based UI
   images/                  Cat mood illustrations
@@ -62,24 +62,47 @@ include the ignored local file. Do not commit it or remove its ignore rule.
 This file is public when served; the publishable key is intended for browser use.
 No deployment workflow is added in this task.
 
-## Current persistence scope
+## Database persistence
 
-Supabase is used for **authentication only**. No table queries or file uploads
-are made. The old Claude-hosted storage startup is not called. Existing in-memory
-habit actions still work after login, but data resets on reload/logout and photo
-uploads remain unavailable. A banner explains this in the tracker.
+The existing tracker reset hook loads the signed-in user's `habits`, then their
+`habit_entries`, through `assets/js/storage.js`. Reads are paginated; there is
+no Realtime subscription. Reload to see changes made in another browser/tab.
+Auth implementation, configuration, database schema, and RLS remain unchanged.
 
-The existing Supabase `habits` and `habit_entries` tables and their RLS are the
-target of a later task. The older `server/` and `database/` planning documents
+Habit inserts include the authenticated `user_id` and omit `id` so PostgreSQL
+generates it. Entry upserts also omit `id` and use the existing unique constraint
+on `(habit_id, entry_date)`. Deletion targets only the habit row, relying on the
+existing `ON DELETE CASCADE` for entries. These database defaults/constraints
+must already exist; the app does not create or change them.
+
+The adapter maps `start` to `start_date`, daily keys to `entry_date`, `createdAt`
+to/from `created_at`, and entry `ts` to/from `updated_at`. Dates retain their
+`YYYY-MM-DD` calendar representation. Numeric values and nulls are preserved.
+Only supported schema fields are sent; photos and notes are not persisted.
+`photo_path` is neither loaded nor written, leaving existing values untouched.
+Photo upload controls display an unavailable message; Supabase Storage is unused.
+
+Writes temporarily lock habit controls and update in-memory state only after
+server confirmation. Failures appear in the page banner and any open modal;
+numeric controls revert to confirmed values and modal input is retained.
+If a network response is lost, reload before retrying to check whether the server
+committed the write. Pending results are ignored after logout/account changes,
+and user-specific memory is cleared. A failed initial load requires a reload.
+
+The older `server/` and `database/` planning documents
 are historical scaffolding, not instructions to create a server or change schema.
 
 ## Manual verification
 
 1. Open the site logged out: only the auth screen should appear.
 2. Sign up: check for the confirmation message, follow the email link, then log in.
-3. Reload while logged in: the tracker should return without showing its contents
-   before session restoration. Habits themselves remain temporary.
+3. Create a habit, complete a day, edit numeric values, and mark a rest day.
+   Reload and verify the habit, entries, calendar, and statistics are preserved.
 4. Try incorrect credentials and a failed network request: check for a readable
    error and enabled form controls afterward.
 5. Log out, including from a second tab: the tracker and open modals should hide.
-6. Log in as another user: the previous account's temporary habits should be gone.
+6. Log in as another user: only that account's habits should load, including when
+   logging out while a load or save is still pending.
+7. Delete a habit and reload: the habit and its entries should be gone.
+8. Simulate a failed save: no completion toast should appear, existing data should
+   remain intact, and a visible error should explain the failure.
