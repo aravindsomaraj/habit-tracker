@@ -26,8 +26,13 @@ database/
 ```
 
 The frontend uses React functional components and hooks, bundled by Vite. It is
-still a client-only single-page application: no client-side router or server is
-required, and the custom domain serves it from `/`.
+a client-only single-page application with hash-based routing, so GitHub Pages
+can serve every view from `/` without server rewrites. The main routes are
+`/#/today`, `/#/friends`, and `/#/habits`; Progress, Calendar, Graph, and Proof
+use `/#/<view>/<habit-id>`. These links can be bookmarked or shared, and browser
+Back/Forward restores the selected view and habit. Unknown routes return to
+Today; a deleted or invalid habit ID selects the first available habit. Modals
+are transient and do not get their own URL.
 
 ## Run locally
 
@@ -219,3 +224,6 @@ are historical scaffolding, not instructions to create a server or change schema
     deduplication, unread badges, and subscription cleanup after closing or logout.
 18. Check the Today, Progress, Calendar, Graph, Proof, Friends, and Habits views
     at desktop and mobile widths, including dark/light theme persistence.
+19. Copy a `/#/progress/<habit-id>` URL into a fresh tab, sign in if needed,
+    switch habits, and use Back/Forward. The URL and selected habit should stay
+    in sync. Try an invalid or deleted habit ID; it should select a valid habit.

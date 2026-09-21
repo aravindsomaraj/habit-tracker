@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from '../auth/AuthContext.jsx';
+import { HashRouter } from 'react-router';
 import { AuthScreen } from '../auth/AuthScreen.jsx';
 import { TrackerApp } from './TrackerApp.jsx';
 
@@ -9,5 +10,5 @@ function AppGate() {
 }
 
 export default function App() {
-  return <AuthProvider><AppGate /></AuthProvider>;
+  return <HashRouter><AuthProvider><AppGate /></AuthProvider></HashRouter>;
 }
