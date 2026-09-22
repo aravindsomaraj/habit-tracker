@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createAuthStorage } from './authStorage.js';
 
 let client;
 
@@ -19,7 +20,7 @@ export function getSupabaseClient() {
     throw new Error('Supabase project URL is invalid. Use the HTTPS project URL in config.js.');
   }
   client = createClient(config.SUPABASE_URL, config.SUPABASE_PUBLISHABLE_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: createAuthStorage() },
   });
   return client;
 }

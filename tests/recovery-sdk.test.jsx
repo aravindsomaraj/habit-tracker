@@ -51,6 +51,7 @@ describe('real Supabase callback lifecycle', () => {
     ['hash without redirect marker', () => `/#${callback()}`, false],
     ['query callback', () => `/?${callback()}`, false],
     ['another account already signed in', () => `/?recovery=1#${callback()}`, true],
+    ['recovery takes precedence over Google marker', () => `/?oauth=google#${callback()}`, true],
   ])('shows reset before any tracker render: %s', async (_name, url, previousLogin) => {
     if (previousLogin) localStorage.setItem(storageKey, JSON.stringify(storedSession('previous')));
     window.history.replaceState({}, '', url());
@@ -106,5 +107,84 @@ describe('real Supabase callback lifecycle', () => {
     expect(await screen.findByText('Tracker for recovered')).toBeTruthy();
     await act(async () => {});
     await waitFor(() => expect(screen.queryByLabelText('New password')).toBeNull());
+  });
+});
+
+describe('Google returns through the real Supabase SDK', () => {
+  function googleCallback() {
+    const params = new URLSearchParams(callback());
+    params.delete('type');
+    params.set('provider_token', 'google-api-token');
+    params.set('provider_refresh_token', 'google-api-refresh');
+    return params.toString();
+  }
+
+  it.each([false, true])('accepts a Google callback, restores it, and uses normal logout (previous account: %s)', async (previousLogin) => {
+    if (previousLogin) localStorage.setItem(storageKey, JSON.stringify(storedSession('previous')));
+    const credentials = googleCallback();
+    window.history.replaceState({}, '', `/?oauth=google#${credentials}`);
+    const view = render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText('Tracker for recovered')).toBeTruthy();
+    expect(tracker.render.mock.calls.every(([id]) => id === 'recovered')).toBe(true);
+    expect(screen.queryByLabelText('New password')).toBeNull();
+    expect(window.location.search + window.location.hash).toBe('');
+    const saved = JSON.parse(localStorage.getItem(storageKey));
+    expect(saved.user.id).toBe('recovered');
+    expect(saved.access_token).toBe(new URLSearchParams(credentials).get('access_token'));
+    expect(saved.refresh_token).toBe('refresh-recovered');
+    expect(saved).not.toHaveProperty('provider_token');
+    expect(saved).not.toHaveProperty('provider_refresh_token');
+    view.unmount();
+    await getSupabaseClient().auth.dispose();
+    resetSupabaseClientForTests();
+    render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText('Tracker for recovered')).toBeTruthy();
+    await act(async () => { await getSupabaseClient().auth.signOut({ scope: 'local' }); });
+    expect(await screen.findByText('Welcome back')).toBeTruthy();
+    expect(localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it('accepts query callbacks and removes their credentials', async () => {
+    window.history.replaceState({}, '', `/?oauth=google&${googleCallback()}`);
+    render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText('Tracker for recovered')).toBeTruthy();
+    expect(window.location.search + window.location.hash).toBe('');
+  });
+
+  it.each([
+    ['/?oauth=google#error=access_denied&error_description=Private+provider+message', /Google sign-in was cancelled/],
+    ['/?oauth=google&error=server_error&error_description=Private+provider+message', /Google sign-in could not be completed/],
+    ['/?oauth=google#access_token=malformed', /Google sign-in could not be completed/],
+    ['/?oauth=google', /Google sign-in could not be completed/],
+  ])('keeps failed returns usable and never renders a previous account: %s', async (url, message) => {
+    localStorage.setItem(storageKey, JSON.stringify(storedSession('previous')));
+    window.history.replaceState({}, '', url);
+    render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText(message)).toBeTruthy();
+    await act(async () => {});
+    expect(tracker.render).not.toHaveBeenCalled();
+    expect(screen.queryByText('Reset link unavailable')).toBeNull();
+    expect(screen.queryByText(/Private provider message/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sign in with Google' }).matches(':disabled')).toBe(false);
+    expect(window.location.search + window.location.hash).toBe('');
+    // An explicit password retry still uses the normal central listener.
+    http.mockImplementation(async (input) => {
+      expect(new URL(input).pathname).toBe('/auth/v1/token');
+      return new Response(JSON.stringify(storedSession('password-retry')), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'password-retry@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Log in' }).closest('form'));
+    expect(await screen.findByText('Tracker for password-retry')).toBeTruthy();
+  });
+
+  it('rejects a complete callback if Supabase rejects its token, even with a prior session', async () => {
+    localStorage.setItem(storageKey, JSON.stringify(storedSession('previous')));
+    window.history.replaceState({}, '', `/?oauth=google#${googleCallback()}`);
+    http.mockResolvedValue(new Response(JSON.stringify({ message: 'Invalid token' }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+    render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText(/Google sign-in could not be completed/)).toBeTruthy();
+    expect(tracker.render).not.toHaveBeenCalled();
+    expect(screen.queryByText('Reset link unavailable')).toBeNull();
   });
 });

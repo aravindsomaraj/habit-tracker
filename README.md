@@ -74,6 +74,12 @@ apply the exact redirect and email-template settings in
 [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md), which also documents security behavior
 and the real-email verification checklist.
 
+Google sign-in is available on Login and Signup through the same Supabase auth
+provider. Complete the Google Cloud and Supabase dashboard configuration in
+[GOOGLE_AUTH.md](GOOGLE_AUTH.md) before using it. That guide separates the Google
+callback from the app redirects and includes same-email linking, data isolation,
+and password-recovery regression checks.
+
 ## GitHub Pages deployment
 
 Commit `public/config.js` with the application files; production does not use the
