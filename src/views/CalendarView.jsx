@@ -13,9 +13,9 @@ export function CalendarView({ habit, entries, cursor, onMove, onOpenDay }) {
     if (entry?.rest) classes += ' rest'; else if (entry?.done) classes += ' done'; else if (entry?.value) classes += ' partial'; else if (inRange && date < today()) classes += ' miss';
     if (key === currentKey) classes += ' today';
     const clickable = inRange && date <= today();
-    cells.push(<div key={key} className={classes} style={clickable ? { cursor: 'pointer' } : undefined} onClick={clickable ? () => onOpenDay(key) : undefined}>{day}{entry?.photo && <span className="pin">📸</span>}</div>);
+    cells.push(<button key={key} className={classes} disabled={!clickable} aria-label={`${key}${entry?.rest ? ', rest day' : entry?.done ? ', done' : ''}`} aria-current={key === currentKey ? 'date' : undefined} onClick={() => onOpenDay(key)}>{day}{entry?.photo && <span className="pin">📸</span>}</button>);
   }
-  return <div className="card"><div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><button className="pillbtn" onClick={() => onMove(-1)}>‹</button><h2 style={{ flex: 1, textAlign: 'center', margin: 0 }}>{cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</h2><button className="pillbtn" onClick={() => onMove(1)}>›</button></div>
+  return <div className="card"><div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}><button aria-label="Previous month" className="pillbtn" onClick={() => onMove(-1)}>‹</button><h2 style={{ flex: 1, textAlign: 'center', margin: 0 }}>{cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</h2><button aria-label="Next month" className="pillbtn" onClick={() => onMove(1)}>›</button></div>
     <p className="sub" style={{ textAlign: 'center' }}>{habit.emoji} {habit.name} — tap any past day to fill it in.</p><div className="cal">{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, index) => <div className="dow" key={`${label}-${index}`}>{label}</div>)}{cells}</div>
     <div className="callegend"><span><i style={{ background: 'var(--brand)' }} />Done</span><span><i style={{ background: 'var(--amber)' }} />Partial</span><span><i style={{ background: 'var(--pink)' }} />Missed</span><span><i style={{ background: 'var(--blue)' }} />Rest</span><span><i style={{ background: 'var(--violet)' }} />Today</span></div>
   </div>;

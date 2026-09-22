@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from './AuthContext.jsx';
+import { Brand, WorldBanner } from '../components/WorldBanner.jsx';
 
 export function AuthScreen() {
   const { authenticate, busy, client, status, message, clearMessage } = useAuth();
@@ -21,8 +22,9 @@ export function AuthScreen() {
   }
 
   return <section className="wrap auth-wrap" aria-labelledby="authTitle">
+    <Brand />
+    <WorldBanner title="Good habits start with a small step." subtitle="Your progress, your pace. Pick up where you left off." />
     <div className="card">
-      <div className="logo"><span className="mark">🔥</span> Habit Tracker</div>
       <h1 id="authTitle">{signup ? 'Create your account' : 'Welcome back'}</h1>
       <p className="sub">{signup ? 'Sign up with your email and a password.' : 'Log in to your account.'}</p>
       <p className="banner" role="status" aria-live="polite" hidden={!message}>{message}</p>

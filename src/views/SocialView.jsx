@@ -32,5 +32,5 @@ function ProfileSetup({ onSave }) {
 
 function FriendInvite({ onSend }) {
   const [handle, setHandle] = useState('');
-  return <div className="card"><h2>Your accountability circle</h2><p className="sub">Invite someone by their exact handle. They must accept before they can see shared completions.</p><div className="social-invite"><input maxLength="24" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta" onClick={() => { const clean = handle.trim().toLowerCase().replace(/^@/, ''); if (clean) onSend(clean); }}>Send request</button></div></div>;
+  return <div className="card"><h2>Your accountability circle</h2><p className="sub">Invite someone by their exact handle. They must accept before they can see shared completions.</p><div className="social-invite"><input aria-label="Friend handle" maxLength="24" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta" onClick={() => { const clean = handle.trim().toLowerCase().replace(/^@/, ''); if (clean) onSend(clean); }}>Send request</button></div></div>;
 }

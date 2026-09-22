@@ -42,7 +42,7 @@ function PointsSparkline({ history }) {
   </svg></div><p className="tiny" style={{ marginTop: 4 }}>Points earned per day — last 14 days</p></>;
 }
 
-function EntryNumber({ value, placeholder, onSave }) {
+function EntryNumber({ value, placeholder, label, onSave }) {
   const confirmed = value ?? '';
   const [draft, setDraft] = useState(confirmed);
   useEffect(() => setDraft(confirmed), [confirmed]);
@@ -51,7 +51,7 @@ function EntryNumber({ value, placeholder, onSave }) {
     const result = await onSave(draft === '' ? null : +draft);
     if (!result?.ok) setDraft(confirmed);
   }
-  return <input type="number" inputMode="decimal" value={draft} placeholder={placeholder} onChange={(event) => setDraft(event.target.value)} onBlur={commit} />;
+  return <input aria-label={label} type="number" inputMode="decimal" value={draft} placeholder={placeholder} onChange={(event) => setDraft(event.target.value)} onBlur={commit} />;
 }
 
 function HabitRow({ habit, entry, task, target, entryDate, onSaveEntry, onToggle, onPhoto }) {
@@ -70,18 +70,18 @@ function HabitRow({ habit, entry, task, target, entryDate, onSaveEntry, onToggle
   }, [done]);
   return <div className="hrow">
     <div className="emoji">{habit.emoji}</div><div className="info"><div className="name">{habit.name}</div><div className="task">{task}</div></div>
-    {entryDate && <>
-      <div className="metricbox"><EntryNumber value={entry?.value} placeholder="0" onSave={(value) => onSaveEntry(habit, entryDate, { value })} /><span>{habit.unit}</span></div>
-      <div className="metricbox" title={habit.metric}><EntryNumber value={entry?.metric} placeholder="–" onSave={(metric) => onSaveEntry(habit, entryDate, { metric })} /><span>{habit.metric}</span></div>
+    {entryDate && <div className="habit-controls">
+      <div className="metricbox"><EntryNumber label={`${habit.name}: ${habit.unit}`} value={entry?.value} placeholder="0" onSave={(value) => onSaveEntry(habit, entryDate, { value })} /><span>{habit.unit}</span></div>
+      <div className="metricbox" title={habit.metric}><EntryNumber label={`${habit.name}: ${habit.metric}`} value={entry?.metric} placeholder="–" onSave={(metric) => onSaveEntry(habit, entryDate, { metric })} /><span>{habit.metric}</span></div>
       <button className="iconbtn" title="Upload proof photo" onClick={() => onPhoto(habit, entryDate)}>{entry?.photo ? '🖼️' : '📷'}</button>
-      <button className={`tick ${done ? 'done' : ''} ${popping ? 'pop' : ''}`} onClick={() => onToggle(habit, entryDate, target)}>{done ? '✓' : ''}</button>
-    </>}
+      <button aria-label={`Mark ${habit.name} ${done ? 'incomplete' : 'done'}`} aria-pressed={!!done} className={`tick ${done ? 'done' : ''} ${popping ? 'pop' : ''}`} onClick={() => onToggle(habit, entryDate, target)}>{done ? '✓ Done' : 'Mark done'}</button>
+    </div>}
   </div>;
 }
 
 function BadgeShelf({ habit, entries }) {
   const summary = stats(habit, entries);
-  return <div className="card"><h2>🏆 Trophies — {habit.emoji} {habit.name}</h2><p className="sub">Unlocked as you go. Switch habits on the Progress tab.</p>
+  return <div className="card trophy-card"><span className="eyebrow">THE COLLECTION</span><h2>Trophies</h2><p className="tiny">{habit.emoji} {habit.name}</p><p className="sub">Unlocked as you go. Switch habits on the Progress tab.</p>
     <div className="badges">{BADGES.map((badge) => { const got = badge.test(summary, habit); return <div key={badge.k} className={`badge ${got ? 'got' : ''}`}><div className="b">{got ? badge.icon : '🔒'}</div><small>{badge.t}</small></div>; })}</div>
   </div>;
 }
@@ -93,12 +93,17 @@ export function TodayView({ habits, entries, selectedHabit, onSaveEntry, onToggl
   const total = totalXP(habits, entries);
   const topStreak = Math.max(...habits.map((habit) => stats(habit, entries).streak));
   const mood = catMood(doneToday, habits.length);
-  return <>
-    <div className="card"><div className="catwrap"><div className={`catbox mood-${mood}`}><img src={catImages[mood]} alt={`Mood: ${mood}`} /></div><div style={{ flex: 1, minWidth: 180 }}><div className="catlabel">{catLine(mood, doneToday, habits.length)}</div><strong style={{ fontSize: 15, display: 'block', marginTop: 2 }}>{greeting()}</strong></div></div>
-      <div className="xpwrap" style={{ marginTop: 14 }}><div className="lvl" style={{ background: 'var(--brand)', boxShadow: '0 4px 0 var(--brand-dark)' }}><b>{todayPoints.earned}</b><span>TODAY</span></div><div style={{ flex: 1, minWidth: 190 }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}><strong style={{ fontSize: 15 }}>Today's points</strong><span className="tiny">{todayPoints.earned} / {todayPoints.possible || 0} pts today</span></div><div className="xpbar"><i style={{ width: `${pct(todayPoints.earned, todayPoints.possible || 1)}%`, background: 'linear-gradient(90deg,var(--brand),var(--brand-dark))' }} /></div></div><div className="flame">🔥 {topStreak} day{topStreak === 1 ? '' : 's'}</div></div>
-      <p className="sub" style={{ margin: '14px 0 6px' }}>{today().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} · {doneToday} of {habits.length} done today</p><div className="bar"><i style={{ width: `${pct(doneToday, habits.length)}%` }} /></div><div className="nudge">{nudge(doneToday, habits.length, topStreak)}</div>
+  return <div className="today-layout">
+    <div className="daily-stats" aria-label="Daily summary">
+      <div><span>HABITS COMPLETED</span><strong>{doneToday}<small> / {habits.length}</small></strong><p>One check at a time</p></div>
+      <div><span>TODAY'S POINTS</span><strong>{todayPoints.earned}<small> / {todayPoints.possible || 0}</small></strong><p>A fresh start each day</p></div>
+      <div><span>LONGEST ACTIVE STREAK</span><strong>{topStreak}<small> days</small></strong><p>Keep showing up</p></div>
+      <div><span>ALL-TIME POINTS</span><strong>{total}</strong><p>Every effort adds up</p></div>
     </div>
-    <div className="card"><h2>Today's tasks</h2><p className="sub">Clear these to fill today's bar — 10 pts for done, +5 more for hitting the full target. Resets tomorrow.</p>
+    <div className="daily-primary">
+    <section className="card today-tasks">
+      <div className="section-heading"><div><span className="eyebrow">01 / DAILY PRACTICE</span><h2>Today's tasks</h2></div><span className="count-label">{doneToday} of {habits.length} done</span></div>
+      <p className="sub">Your habits. Your pace. Start with one.</p>
       {habits.map((habit) => {
         const index = idxOf(habit, currentKey);
         if (index < 0) return <HabitRow key={habit.id} habit={habit} task={`Starts ${dayLabel(new Date(`${habit.start}T00:00:00`))}`} />;
@@ -107,8 +112,20 @@ export function TodayView({ habits, entries, selectedHabit, onSaveEntry, onToggl
         const target = targetFor(habit, index);
         return <HabitRow key={habit.id} habit={habit} entry={entry} task={`Day ${index + 1} of ${habit.days} · ${fmt(target)} ${habit.unit}${entry.rest ? ' · 😌 rest day' : ''}`} target={target} entryDate={currentKey} onSaveEntry={onSaveEntry} onToggle={onToggle} onPhoto={onPhoto} />;
       })}
+      <p className="task-footnote">10 points for completing a habit · +5 for reaching its target</p>
+    </section>
+    <section className="card history-card"><div className="section-heading"><div><span className="eyebrow">02 / THE BIGGER PICTURE</span><h2>Your rhythm</h2></div><span className="count-label">LAST 14 DAYS</span></div><p className="sub">Daily points across all your habits.</p><PointsSparkline history={pointsHistory(habits, entries, 14)} /></section>
     </div>
-    <div className="card"><h2>🏦 All-time points</h2><p className="sub">Never resets — this is what today's points turn into.</p><div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}><div className="lvl" style={{ background: 'var(--violet)', boxShadow: '0 4px 0 #6d3fd6' }}><b>{total}</b><span>TOTAL</span></div><div className="tiny" style={{ flex: 1, minWidth: 160 }}>Every point you've ever earned, across every habit — this bar only grows.</div></div><PointsSparkline history={pointsHistory(habits, entries, 14)} /></div>
-    <BadgeShelf habit={selectedHabit} entries={entries} />
-  </>;
+    <aside className="daily-aside">
+      <section className="card daily-progress"><span className="eyebrow">A LITTLE CLOSER</span><h2>Today's progress</h2>
+        <div className="completion-number">{pct(doneToday, habits.length)}<span>%</span></div>
+        <div className="progress-blocks" role="progressbar" aria-label="Today's habit completion" aria-valuenow={pct(doneToday, habits.length)} aria-valuemin={0} aria-valuemax={100}>{Array.from({length:12},(_,i)=><i key={i} className={i < Math.round(doneToday / Math.max(habits.length,1) * 12) ? 'filled' : ''} />)}</div>
+        <p className="tiny">{habits.length - doneToday} habit{habits.length - doneToday === 1 ? '' : 's'} left to complete today.</p>
+        <div className="companion"><div className={`catbox mood-${mood}`}><img src={catImages[mood]} alt={`Mood: ${mood}`} /></div><div><strong>{greeting()}</strong><p>{catLine(mood, doneToday, habits.length)}</p></div></div>
+        <div className="nudge">{nudge(doneToday, habits.length, topStreak)}</div>
+      </section>
+      <BadgeShelf habit={selectedHabit} entries={entries} />
+    </aside>
+
+  </div>;
 }

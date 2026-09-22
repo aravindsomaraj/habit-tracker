@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { NavLink, matchPath, useLocation, useNavigate } from 'react-router';
+import { matchPath, useLocation, useNavigate } from 'react-router';
 import { Banner } from '../components/Banner.jsx';
 import { ChatModal } from '../components/ChatModal.jsx';
 import { Confetti, Toast } from '../components/Toast.jsx';
@@ -17,11 +17,8 @@ import { ProgressView } from '../views/ProgressView.jsx';
 import { ProofView } from '../views/ProofView.jsx';
 import { SocialView } from '../views/SocialView.jsx';
 import { TodayView } from '../views/TodayView.jsx';
+import { AppShell } from '../components/AppShell.jsx';
 
-const tabs = [
-  ['today', '✅ Today'], ['progress', '📊 Progress'], ['calendar', '📅 Calendar'],
-  ['graph', '📈 Graph'], ['proof', '📸 Proof'], ['social', '🤝 Friends'], ['manage', '⚙️ Habits'],
-];
 const habitViews = ['progress', 'calendar', 'graph', 'proof'];
 const otherViews = ['today', 'friends', 'habits'];
 
@@ -75,7 +72,10 @@ export function TrackerApp({ auth }) {
   function toggleTheme() {
     const root = document.documentElement, current = root.getAttribute('data-theme');
     const dark = current ? current === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const next = dark ? 'light' : 'dark'; root.setAttribute('data-theme', next);
+    const next = dark ? 'light' : 'dark';
+    const apply = () => root.setAttribute('data-theme', next);
+    if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(apply);
+    else apply();
     try { localStorage.setItem('sl_theme', next); } catch { /* Theme still applies for this session. */ }
   }
 
@@ -118,7 +118,7 @@ export function TrackerApp({ auth }) {
   else if (view === 'social') content = <SocialView social={social} habits={store.habits} onOpenSharing={() => setModal({ type: 'sharing' })} />;
   else if (!store.habits.length) content = <div className="card"><div className="empty"><div className="big">🎯</div><h2>No habits yet</h2><p className="sub">Tell me the habit and the goal — I'll break it into daily steps you can tick off.</p><button className="cta" onClick={() => setModal({ type: 'new' })}>Create my first habit</button></div></div>;
   else {
-    const picker = habitViews.includes(view) ? <HabitPicker habits={store.habits} selected={habit.id} onPick={(id) => navigate(habitPath(view, id))} /> : null;
+    const picker = habitViews.includes(view) ? <HabitPicker habits={store.habits} selected={habit.id} onPick={(id) => navigate(habitPath(view, id), { viewTransition: true })} /> : null;
     const views = {
       today: <TodayView habits={store.habits} entries={store.entries} selectedHabit={habit} onSaveEntry={store.saveEntry} onToggle={toggle} onPhoto={choosePhoto} />,
       progress: <ProgressView habit={habit} entries={store.entries} />,
@@ -132,14 +132,12 @@ export function TrackerApp({ auth }) {
 
   const dayEntry = modal?.type === 'day' ? entryOf(store.entries, modal.habit, modal.entryDate) || {} : null;
   return <>
-    <div className="wrap">
-      <header className="top"><div className="logo"><span className="mark">🔥</span> Habit Tracker</div><div className="spacer" /><button className="pillbtn" onClick={toggleTheme}>🌗 Theme</button><button className="cta" disabled={store.busy || store.status !== 'ready'} onClick={() => setModal({ type: 'new' })}>+ New habit</button><button className="pillbtn" disabled={auth.busy} onClick={auth.logout}>Log out</button></header>
+    <AppShell view={view} links={Object.fromEntries(['today', ...habitViews, 'social', 'manage'].map((key) => [key, habitViews.includes(key) ? habitPath(key) : key === 'social' ? '/friends' : key === 'manage' ? '/habits' : '/today']))} unreadCount={social.unreadCount} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
       <Banner>{auth.accountMessage}</Banner><Banner>{store.message}</Banner>
-      <nav className="tabs">{tabs.map(([key, label]) => <NavLink key={key} className={view === key ? 'on' : ''} to={habitViews.includes(key) ? habitPath(key) : key === 'social' ? '/friends' : key === 'manage' ? '/habits' : '/today'}>{label}{key === 'social' && social.unreadCount > 0 && <span className="tab-badge" aria-label="Unread messages">{social.unreadCount > 9 ? '9+' : social.unreadCount}</span>}</NavLink>)}</nav>
-      <main inert={store.busy || store.status === 'loading' ? '' : undefined}>{content}</main>
-    </div>
+      <main id="main-content" tabIndex={-1} aria-busy={store.busy || store.status === 'loading'} inert={store.busy || store.status === 'loading' ? '' : undefined}>{content}</main>
+    </AppShell>
     {(modal || social.chat) && <Modal onClose={closeModal} busy={store.busy}><Banner>{store.message}</Banner>
-      {social.chat ? <ChatModal client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
+      {social.chat ? <ChatModal client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`, { viewTransition: true }); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
     </Modal>}
     <Toast message={toast} onDone={clearToast} /><Confetti burst={burst} />
   </>;

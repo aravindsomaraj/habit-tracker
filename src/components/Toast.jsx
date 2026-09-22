@@ -7,12 +7,12 @@ export function Toast({ message, onDone }) {
     return () => window.clearTimeout(timer);
   }, [message, onDone]);
   if (!message) return null;
-  return <div className="react-toast">{message}</div>;
+  return <div className="react-toast" role="status">{message}</div>;
 }
 
 export function Confetti({ burst }) {
   if (!burst) return null;
-  const colors = ['#58cc02', '#8b5cf6', '#1cb0f6', '#ffc800', '#ff4b7d'];
+  const colors = ['#91b765', '#d3b47a', '#8cc5d0', '#e9ca77', '#a46c4b'];
   return <>{Array.from({ length: 34 }, (_, index) => <i key={`${burst}-${index}`} className="conf" style={{
     left: `${Math.random() * 100}vw`, background: colors[index % colors.length],
     animationDuration: `${1.4 + Math.random() * 1.1}s`, animationDelay: `${Math.random() * .25}s`,
