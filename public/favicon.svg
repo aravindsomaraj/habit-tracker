@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <title>Habit Tracker</title>
+  <rect width="16" height="16" fill="#1c1d1f"/>
+  <path fill="#383839" d="M3 2h12v13H3z"/>
+  <path fill="#bc9475" d="M2 1h12v13H2z"/>
+  <path fill="#242528" d="M5 3h7v9H5z"/>
+  <path fill="#bc9475" d="M6 4h2v3h2V4h2v7h-2V9H8v2H6z"/>
+</svg>
