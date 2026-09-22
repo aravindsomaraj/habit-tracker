@@ -3,9 +3,11 @@ import { RecoveryRequest } from './RecoveryScreen.jsx';
 import { MIN_PASSWORD_LENGTH } from './recovery.js';
 import { useAuth } from './AuthContext.jsx';
 import { Brand, WorldBanner } from '../components/WorldBanner.jsx';
+import googleButton from '../../assets/images/google-signin-dark.svg';
+import './google.css';
 
 export function AuthScreen() {
-  const { authenticate, busy, client, status, message, clearMessage } = useAuth();
+  const { authenticate, signInWithGoogle, busy, client, status, message, clearMessage } = useAuth();
   const [forgot, setForgot] = useState(false);
   const [signup, setSignup] = useState(false);
   const [email, setEmail] = useState('');
@@ -33,13 +35,17 @@ export function AuthScreen() {
     <WorldBanner title="Good habits start with a small step." subtitle="Your progress, your pace. Pick up where you left off." />
     <div className="card">
       <h1 id="authTitle" tabIndex={-1} ref={titleRef}>{signup ? 'Create your account' : 'Welcome back'}</h1>
-      <p className="sub">{signup ? 'Sign up with your email and a password.' : 'Log in to your account.'}</p>
+      <p className="sub">{signup ? 'Sign up with email and password or Google.' : 'Log in to your account.'}</p>
       <p className="banner" role="status" aria-live="polite" hidden={!message}>{message}</p>
       <form onSubmit={submit}>
         <fieldset disabled={busy || !client || status === 'checking'}>
           <label className="f"><span>Email</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label className="f"><span>Password</span><input type="password" minLength={signup ? MIN_PASSWORD_LENGTH : undefined} autoComplete={signup ? 'new-password' : 'current-password'} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           <button className="cta" type="submit">{signup ? 'Sign up' : 'Log in'}</button>
+          <div className="auth-divider" aria-hidden="true"><span>or</span></div>
+          <button className="auth-google-button" type="button" onClick={signInWithGoogle} aria-label="Sign in with Google">
+            <img src={googleButton} width="180" height="40" alt="" />
+          </button>
           {!signup && <button className="pillbtn" type="button" onClick={() => { setPassword(''); clearMessage(); setForgot(true); }}>Forgot password?</button>}
           <button className="pillbtn" type="button" onClick={switchMode}>{signup ? 'Already have an account? Log in' : 'Create an account'}</button>
         </fieldset>

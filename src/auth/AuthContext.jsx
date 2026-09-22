@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { usePasswordRecovery } from './usePasswordRecovery.js';
 import { getSupabaseClient } from '../data/supabase.js';
 import { RECOVERY_SUCCESS } from './recovery.js';
+import { cleanGoogleReturn, googleRedirect, googleReturn, googleReturnMessage } from './google.js';
 
 const AuthContext = createContext(null);
 
@@ -18,6 +19,8 @@ export function AuthProvider({ children }) {
   const userIdRef = useRef(null);
   const sessionKnown = useRef(false);
   const mounted = useRef(true);
+  const [oauthCallback] = useState(googleReturn);
+  const oauthPending = useRef(!!oauthCallback);
 
   const applySession = useCallback((nextSession) => {
     const firstSession = !sessionKnown.current;
@@ -59,7 +62,9 @@ export function AuthProvider({ children }) {
         if (!onRecoveryAuth(event, nextSession)) return;
         latestSession = nextSession;
         revision.current += 1;
-        applySession(nextSession);
+        // Do not let INITIAL_SESSION restore a previous account while an OAuth
+        // return is still being validated (including cancellation/error URLs).
+        if (!oauthPending.current) applySession(nextSession);
       });
       authSubscription = listener.data.subscription;
       const readRevision = revision.current;
@@ -69,12 +74,32 @@ export function AuthProvider({ children }) {
         const result = await authClient.auth.getSession();
         if (!active) return;
         await restoreRecovery(readRevision === revision.current ? result.data?.session : latestSession, authClient, initialization.error || result.error);
+        if (!active) return;
+        if (oauthPending.current) {
+          cleanGoogleReturn();
+          if (oauthCallback.error || !oauthCallback.complete || initialization.error || result.error || !result.data?.session?.user) {
+            applySession(null);
+            setMessage(googleReturnMessage(oauthCallback));
+            // Keep late INITIAL_SESSION/SIGNED_IN events from overriding the
+            // failed return. Password sign-in or a fresh OAuth return releases it.
+          } else {
+            oauthPending.current = false;
+            applySession(readRevision === revision.current ? result.data.session : latestSession);
+          }
+          return;
+        }
         if (!active || readRevision !== revision.current) return;
         if (result.error) throw result.error;
         applySession(result.data.session);
       }).catch((error) => {
         if (!active) return;
         initializationFailed();
+        if (oauthPending.current) {
+          cleanGoogleReturn();
+          applySession(null);
+          setMessage(googleReturnMessage(oauthCallback));
+          return;
+        }
         if (userIdRef.current) return;
         setStatus('error');
         setMessage(error.message || 'Unable to restore your session. Reload to try again.');
@@ -92,11 +117,42 @@ export function AuthProvider({ children }) {
       authSubscription?.unsubscribe();
     };
     // This effect intentionally owns the single auth subscription for this provider.
-  }, [applySession, onRecoveryAuth, restoreRecovery, initializationFailed]);
+  }, [applySession, onRecoveryAuth, restoreRecovery, initializationFailed, oauthCallback]);
+
+  useEffect(() => {
+    // Back from Google's page can restore a frozen document with busy=true.
+    function resume(event) {
+      if (!event.persisted) return;
+      busyRef.current = false;
+      setBusy(false);
+      setMessage('');
+    }
+    window.addEventListener('pageshow', resume);
+    return () => window.removeEventListener('pageshow', resume);
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    if (busyRef.current || !client || status === 'checking' || recovery.state !== 'none') return;
+    busyRef.current = true;
+    setBusy(true);
+    setMessage('Opening Google sign-in…');
+    try {
+      const result = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: googleRedirect() } });
+      if (result.error || !result.data?.url) throw result.error || new Error('Missing OAuth destination');
+      // The SDK navigates; retain the lock until navigation or a BFCache return.
+    } catch {
+      busyRef.current = false;
+      if (mounted.current) {
+        setBusy(false);
+        setMessage('Unable to start Google sign-in. Please try again or sign in with email.');
+      }
+    }
+  }, [client, status, recovery.state]);
 
   const authenticate = useCallback(async ({ signup, email, password }) => {
     if (busyRef.current || !client) return { ok: false };
     busyRef.current = true;
+    oauthPending.current = false;
     setBusy(true);
     setMessage(signup ? 'Creating your account…' : 'Logging in…');
     try {
@@ -142,7 +198,7 @@ export function AuthProvider({ children }) {
   }, [applySession, client]);
 
   const clearMessage = useCallback(() => setMessage(''), []);
-  return <AuthContext.Provider value={{ client, session, status, message, accountMessage, busy, recovery, authenticate, logout, clearMessage }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ client, session, status, message, accountMessage, busy, recovery, authenticate, signInWithGoogle, logout, clearMessage }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

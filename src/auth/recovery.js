@@ -19,7 +19,7 @@ export function recoveryLocation() {
   return {
     requested: url.searchParams.has('recovery') || type === 'recovery' || !!readRecovery()
       || url.pathname === '/reset-password' || url.hash.split('?')[0] === '#/reset-password'
-      || (callback && (!type || params.has('error') || params.has('error_code'))),
+      || (url.searchParams.get('oauth') !== 'google' && callback && (!type || params.has('error') || params.has('error_code'))),
     callback,
     // A URL marker is never proof. Only PASSWORD_RECOVERY authorizes the form.
     recoveryCallback: type === 'recovery' && ['access_token', 'refresh_token', 'expires_in', 'token_type'].every((key) => !!params.get(key)),
@@ -45,7 +45,7 @@ export function saveRecovery(marker) {
 }
 export function cleanRecoveryUrl(keepRecovery = false) {
   const url = new URL(window.location.href);
-  for (const key of ['recovery', 'access_token', 'refresh_token', 'expires_in', 'expires_at', 'token_type', 'type', 'error', 'error_code', 'error_description', 'code']) url.searchParams.delete(key);
+  for (const key of ['recovery', 'oauth', 'access_token', 'refresh_token', 'provider_token', 'provider_refresh_token', 'expires_in', 'expires_at', 'token_type', 'type', 'error', 'error_code', 'error_description', 'code']) url.searchParams.delete(key);
   if (keepRecovery) url.searchParams.set('recovery', '1');
   url.hash = '';
   window.history.replaceState(window.history.state, '', url);
