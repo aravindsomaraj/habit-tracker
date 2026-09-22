@@ -69,6 +69,11 @@ with Supabase's hosted verification link, not a custom server callback route.
 See [Supabase redirect setup](https://supabase.com/docs/guides/auth/redirect-urls).
 No project settings, schema, SQL, or RLS policies were changed by this task.
 
+Password recovery is available from **Forgot password?** on Login. Before deploying,
+apply the exact redirect and email-template settings in
+[PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md), which also documents security behavior
+and the real-email verification checklist.
+
 ## GitHub Pages deployment
 
 Commit `public/config.js` with the application files; production does not use the
