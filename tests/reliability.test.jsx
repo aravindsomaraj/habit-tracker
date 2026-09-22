@@ -22,6 +22,7 @@ function authClient(overrides = {}) {
   let listener;
   return {
     auth: {
+      initialize: vi.fn(async () => ({ error: null })),
       onAuthStateChange(callback) { listener = callback; return { data: { subscription: { unsubscribe: vi.fn() } } }; },
       getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
       signInWithPassword: vi.fn(async () => ({ data: { session: null }, error: { message: 'Invalid credentials' } })),

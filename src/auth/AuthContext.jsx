@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { usePasswordRecovery } from './usePasswordRecovery.js';
 import { getSupabaseClient } from '../data/supabase.js';
+import { RECOVERY_SUCCESS } from './recovery.js';
 
 const AuthContext = createContext(null);
 
@@ -32,33 +34,53 @@ export function AuthProvider({ children }) {
     if (firstSession) setMessage('');
   }, []);
 
+  const recoveryComplete = useCallback(() => {
+    // Set this after local signOut resolves, so SIGNED_OUT cannot erase it.
+    revision.current += 1;
+    applySession(null);
+    setMessage(RECOVERY_SUCCESS);
+  }, [applySession]);
+  const recovery = usePasswordRecovery(client, recoveryComplete);
+  const { onAuth: onRecoveryAuth, restore: restoreRecovery, initializationFailed } = recovery;
+
   useEffect(() => {
     mounted.current = true;
     let active = true;
     let authSubscription;
+    let latestSession;
     const slow = window.setTimeout(() => {
       if (active && !sessionKnown.current) setMessage('Still checking your session. Check your connection and reload if this continues.');
     }, 15000);
     try {
       const authClient = getSupabaseClient();
       setClient(authClient);
-      const listener = authClient.auth.onAuthStateChange((_event, nextSession) => {
+      const listener = authClient.auth.onAuthStateChange((event, nextSession) => {
         if (!active) return;
+        if (!onRecoveryAuth(event, nextSession)) return;
+        latestSession = nextSession;
         revision.current += 1;
         applySession(nextSession);
       });
       authSubscription = listener.data.subscription;
       const readRevision = revision.current;
-      authClient.auth.getSession().then((result) => {
+      authClient.auth.initialize().then(async (initialization) => {
+        if (!active) return;
+        if (initialization.error) initializationFailed();
+        const result = await authClient.auth.getSession();
+        if (!active) return;
+        await restoreRecovery(readRevision === revision.current ? result.data?.session : latestSession, authClient, initialization.error || result.error);
         if (!active || readRevision !== revision.current) return;
         if (result.error) throw result.error;
         applySession(result.data.session);
       }).catch((error) => {
-        if (!active || userIdRef.current) return;
+        if (!active) return;
+        initializationFailed();
+        if (userIdRef.current) return;
         setStatus('error');
         setMessage(error.message || 'Unable to restore your session. Reload to try again.');
       }).finally(() => window.clearTimeout(slow));
     } catch (error) {
+      initializationFailed();
       window.clearTimeout(slow);
       setStatus('error');
       setMessage(error.message || 'Unable to restore your session. Reload to try again.');
@@ -70,8 +92,7 @@ export function AuthProvider({ children }) {
       authSubscription?.unsubscribe();
     };
     // This effect intentionally owns the single auth subscription for this provider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applySession]);
+  }, [applySession, onRecoveryAuth, restoreRecovery, initializationFailed]);
 
   const authenticate = useCallback(async ({ signup, email, password }) => {
     if (busyRef.current || !client) return { ok: false };
@@ -121,7 +142,7 @@ export function AuthProvider({ children }) {
   }, [applySession, client]);
 
   const clearMessage = useCallback(() => setMessage(''), []);
-  return <AuthContext.Provider value={{ client, session, status, message, accountMessage, busy, authenticate, logout, clearMessage }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ client, session, status, message, accountMessage, busy, recovery, authenticate, logout, clearMessage }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
