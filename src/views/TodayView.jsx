@@ -1,9 +1,11 @@
+import { DecorativeShapes } from '../components/DecorativeShapes.jsx';
+import { MoodCheckIn } from '../components/MoodCheckIn.jsx';
 import catHappy from '../../assets/images/cat-1.png';
 import catMeh from '../../assets/images/cat-2.png';
 import catSad from '../../assets/images/cat-3.png';
 import { useEffect, useRef, useState } from 'react';
 import {
-  BADGES, dateKey, dayLabel, entryOf, fmt, idxOf, pct, pointsForDay, pointsHistory,
+  BADGES, addDays, habitsActiveOn, parseKey, dateKey, dayLabel, entryOf, fmt, idxOf, pct, pointsForDay, pointsHistory,
   stats, targetFor, today, totalXP,
 } from '../lib/tracker.js';
 
@@ -69,13 +71,15 @@ function HabitRow({ habit, entry, task, target, entryDate, onSaveEntry, onToggle
     return undefined;
   }, [done]);
   return <div className="hrow">
-    <div className="emoji">{habit.emoji}</div><div className="info"><div className="name">{habit.name}</div><div className="task">{task}</div></div>
+    <div className="emoji">{habit.emoji}</div><div className="info"><h3 className="name">{habit.name}</h3><div className="task">{task}</div></div>
+    {entryDate && <button className={`check-circle ${done ? "done" : ""}`} aria-label={`Toggle ${habit.name} completion`} aria-pressed={!!done} onClick={() => onToggle(habit, entryDate, target)}>{done ? "✓" : ""}</button>}
     {entryDate && <div className="habit-controls">
-      <div className="metricbox"><EntryNumber label={`${habit.name}: ${habit.unit}`} value={entry?.value} placeholder="0" onSave={(value) => onSaveEntry(habit, entryDate, { value })} /><span>{habit.unit}</span></div>
-      <div className="metricbox" title={habit.metric}><EntryNumber label={`${habit.name}: ${habit.metric}`} value={entry?.metric} placeholder="–" onSave={(metric) => onSaveEntry(habit, entryDate, { metric })} /><span>{habit.metric}</span></div>
-      <button className="iconbtn" title="Upload proof photo" onClick={() => onPhoto(habit, entryDate)}>{entry?.photo ? '🖼️' : '📷'}</button>
-      <button aria-label={`Mark ${habit.name} ${done ? 'incomplete' : 'done'}`} aria-pressed={!!done} className={`tick ${done ? 'done' : ''} ${popping ? 'pop' : ''}`} onClick={() => onToggle(habit, entryDate, target)}>{done ? '✓ Done' : 'Mark done'}</button>
+      <div className="metricbox"><EntryNumber label={`${habit.name}: ${habit.unit}`} value={entry?.value} placeholder={String(target)} onSave={(value) => onSaveEntry(habit, entryDate, { value })} /><span>{habit.unit}</span></div>
+      {habit.metric && <div className="metricbox" title={habit.metric}><EntryNumber label={`${habit.name}: ${habit.metric}`} value={entry?.metric} placeholder="–" onSave={(metric) => onSaveEntry(habit, entryDate, { metric })} /><span>{habit.metric}</span></div>}
+      <button className="iconbtn" aria-label={`Upload proof photo for ${habit.name}`} title="Upload proof photo" onClick={() => onPhoto(habit, entryDate)}>{entry?.photo ? '🖼️' : '📷'}</button>
+      <button aria-label={`Mark ${habit.name} ${done ? 'incomplete' : 'done'}`} aria-pressed={!!done} className={`tick ${done ? 'done' : ''} ${popping ? 'pop' : ''}`} onClick={() => onToggle(habit, entryDate, target)}>{done ? 'Undo' : 'Mark done'}</button>
     </div>}
+    {entryDate && <p className="habit-points">{done ? `+${10 + (entry.value >= target ? 5 : 0)} pts earned` : "10 pts for done · +5 for reaching the target"}</p>}
   </div>;
 }
 
@@ -86,44 +90,54 @@ function BadgeShelf({ habit, entries }) {
   </div>;
 }
 
-export function TodayView({ habits, entries, selectedHabit, onSaveEntry, onToggle, onPhoto }) {
-  const currentKey = dateKey(today());
-  const doneToday = habits.filter((habit) => entryOf(entries, habit, currentKey)?.done).length;
+export function TodayView({ userId = 'local', habits, entries, selectedHabit, onSaveEntry, onToggle, onPhoto }) {
+  const [selectedDate, setSelectedDate] = useState(() => dateKey(today()));
+  const currentKey = selectedDate;
+  const active = habitsActiveOn(habits, currentKey);
+  const doneToday = active.filter((habit) => entryOf(entries, habit, currentKey)?.done).length;
   const todayPoints = pointsForDay(habits, entries, currentKey);
   const total = totalXP(habits, entries);
-  const topStreak = Math.max(...habits.map((habit) => stats(habit, entries).streak));
-  const mood = catMood(doneToday, habits.length);
+  const topStreak = Math.max(0, ...habits.map((habit) => stats(habit, entries).streak));
+  const mood = catMood(doneToday, active.length);
+  const selectedDay = parseKey(currentKey);
+  const week = Array.from({ length: 7 }, (_, index) => addDays(selectedDay, index - selectedDay.getDay()));
   return <div className="today-layout">
-    <div className="daily-stats" aria-label="Daily summary">
-      <div><span>HABITS COMPLETED</span><strong>{doneToday}<small> / {habits.length}</small></strong><p>One check at a time</p></div>
-      <div><span>TODAY'S POINTS</span><strong>{todayPoints.earned}<small> / {todayPoints.possible || 0}</small></strong><p>A fresh start each day</p></div>
-      <div><span>LONGEST ACTIVE STREAK</span><strong>{topStreak}<small> days</small></strong><p>Keep showing up</p></div>
-      <div><span>ALL-TIME POINTS</span><strong>{total}</strong><p>Every effort adds up</p></div>
-    </div>
+    <section className="challenge" aria-label="Daily summary">
+      <DecorativeShapes /><h2>{currentKey === dateKey(today()) ? "Today's challenge" : 'Fill in the day'}</h2>
+      <p>{doneToday} of {active.length} habits done · {currentKey === dateKey(today()) ? 'clear them before midnight' : dayLabel(selectedDay)}</p>
+      <div className="challenge-chips"><span>{todayPoints.earned} / {todayPoints.possible} pts {currentKey === dateKey(today()) ? 'today' : 'earned'}</span><span>🔥 {topStreak} days</span></div>
+      <div className="bar" role="progressbar" aria-label="Daily points" aria-valuenow={pct(todayPoints.earned, todayPoints.possible)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${pct(todayPoints.earned, todayPoints.possible)}%` }} /></div>
+      <div className="challenge-tip">{nudge(doneToday, active.length, topStreak)}</div>
+    </section>
+    <div className="week-strip" aria-label="Choose a day">{week.map((date) => {
+      const key = dateKey(date), complete = habits.some((habit) => entryOf(entries, habit, key)?.done);
+      return <button key={key} className={key === currentKey ? 'on' : ''} aria-label={date.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} aria-pressed={key === currentKey} disabled={date > today()} onClick={() => setSelectedDate(key)}><small>{complete ? '★' : date.toLocaleDateString('en-IN', { weekday: 'short' })}</small><b>{date.getDate()}</b></button>;
+    })}</div>
     <div className="daily-primary">
     <section className="card today-tasks">
-      <div className="section-heading"><div><span className="eyebrow">01 / DAILY PRACTICE</span><h2>Today's tasks</h2></div><span className="count-label">{doneToday} of {habits.length} done</span></div>
-      <p className="sub">Your habits. Your pace. Start with one.</p>
+      <h2 className="section-title">Your plan</h2>
+      <p className="sub">10 pts for done, +5 more for hitting the full target. Resets tomorrow.</p>
       {habits.map((habit) => {
         const index = idxOf(habit, currentKey);
         if (index < 0) return <HabitRow key={habit.id} habit={habit} task={`Starts ${dayLabel(new Date(`${habit.start}T00:00:00`))}`} />;
         if (index >= habit.days) return <HabitRow key={habit.id} habit={habit} task="Goal window finished 🎉" />;
         const entry = entryOf(entries, habit, currentKey) || {};
         const target = targetFor(habit, index);
-        return <HabitRow key={habit.id} habit={habit} entry={entry} task={`Day ${index + 1} of ${habit.days} · ${fmt(target)} ${habit.unit}${entry.rest ? ' · 😌 rest day' : ''}`} target={target} entryDate={currentKey} onSaveEntry={onSaveEntry} onToggle={onToggle} onPhoto={onPhoto} />;
+        return <HabitRow key={`${habit.id}:${currentKey}`} habit={habit} entry={entry} task={`Day ${index + 1} of ${habit.days} · ${fmt(target)} ${habit.unit}${entry.rest ? ' · 😌 rest day' : ''}`} target={target} entryDate={currentKey} onSaveEntry={onSaveEntry} onToggle={onToggle} onPhoto={onPhoto} />;
       })}
-      <p className="task-footnote">10 points for completing a habit · +5 for reaching its target</p>
     </section>
-    <section className="card history-card"><div className="section-heading"><div><span className="eyebrow">02 / THE BIGGER PICTURE</span><h2>Your rhythm</h2></div><span className="count-label">LAST 14 DAYS</span></div><p className="sub">Daily points across all your habits.</p><PointsSparkline history={pointsHistory(habits, entries, 14)} /></section>
+    <MoodCheckIn key={`${userId}:${currentKey}`} userId={userId} date={currentKey} />
+    <section className="card history-card"><div className="section-heading"><div><h2>Your rhythm</h2></div><span className="count-label">LAST 14 DAYS</span></div><p className="sub">Daily points across all your habits.</p><PointsSparkline history={pointsHistory(habits, entries, 14)} /></section>
     </div>
     <aside className="daily-aside">
-      <section className="card daily-progress"><span className="eyebrow">A LITTLE CLOSER</span><h2>Today's progress</h2>
-        <div className="completion-number">{pct(doneToday, habits.length)}<span>%</span></div>
-        <div className="progress-blocks" role="progressbar" aria-label="Today's habit completion" aria-valuenow={pct(doneToday, habits.length)} aria-valuemin={0} aria-valuemax={100}>{Array.from({length:12},(_,i)=><i key={i} className={i < Math.round(doneToday / Math.max(habits.length,1) * 12) ? 'filled' : ''} />)}</div>
-        <p className="tiny">{habits.length - doneToday} habit{habits.length - doneToday === 1 ? '' : 's'} left to complete today.</p>
-        <div className="companion"><div className={`catbox mood-${mood}`}><img src={catImages[mood]} alt={`Mood: ${mood}`} /></div><div><strong>{greeting()}</strong><p>{catLine(mood, doneToday, habits.length)}</p></div></div>
-        <div className="nudge">{nudge(doneToday, habits.length, topStreak)}</div>
+      <section className="card daily-progress"><span className="eyebrow">A LITTLE CLOSER</span><h2>{currentKey === dateKey(today()) ? "Today's progress" : 'Day progress'}</h2>
+        <div className="completion-number">{pct(doneToday, active.length)}<span>%</span></div>
+        <div className="progress-blocks" role="progressbar" aria-label="Today's habit completion" aria-valuenow={pct(doneToday, active.length)} aria-valuemin={0} aria-valuemax={100}>{Array.from({length:12},(_,i)=><i key={i} className={i < Math.round(doneToday / Math.max(active.length,1) * 12) ? 'filled' : ''} />)}</div>
+        <p className="tiny">{active.length - doneToday} habit{active.length - doneToday === 1 ? '' : 's'} left to complete {currentKey === dateKey(today()) ? 'today' : 'on this day'}.</p>
+        <div className="companion"><div className={`catbox mood-${mood}`}><img src={catImages[mood]} alt={`Mood: ${mood}`} /></div><div><strong>{greeting()}</strong><p>{catLine(mood, doneToday, active.length)}</p></div></div>
+        <div className="nudge">{nudge(doneToday, active.length, topStreak)}</div>
       </section>
+      <p className="all-time-points">{fmt(total)} all-time points</p>
       <BadgeShelf habit={selectedHabit} entries={entries} />
     </aside>
 

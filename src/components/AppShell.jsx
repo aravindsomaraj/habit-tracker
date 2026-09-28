@@ -1,37 +1,27 @@
-import { NavLink } from 'react-router';
-import { Brand } from './WorldBanner.jsx';
-import woodland from '../../assets/images/woodland.svg';
+import { NavLink, Link } from 'react-router';
 
 const sections = [
-  ['today', 'Today', 'M3 3h10v10H3z M5 8h2v2h2V6h2'],
-  ['progress', 'Progress', 'M2 11h3v3H2z M7 7h3v7H7z M12 2h3v12h-3z'],
-  ['calendar', 'Calendar', 'M2 4h12v10H2z M5 1v5 M11 1v5 M2 8h12'],
-  ['graph', 'Graph', 'M2 2v12h12 M4 10h3V7h4V4h3'],
-  ['proof', 'Proof', 'M2 4h12v10H2z M5 4V2h6v2 M6 7h4v4H6z'],
-  ['social', 'Friends', 'M3 2h4v4H3z M10 3h3v3h-3z M1 9h8v5H1z M11 9h4v5h-4'],
-  ['manage', 'Habits', 'M2 3h3v3H2z M8 4h6 M2 10h3v3H2z M8 11h6'],
+  ['today', 'Today', 'M5 12l4 4L19 6'],
+  ['progress', 'Progress', 'M5 20V10M12 20V4M19 20v-7'],
+  ['calendar', 'Calendar', 'M7 5h10a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3ZM4 10h16M9 3v4M15 3v4'],
+  ['graph', 'Graph', 'M4 18l5-6 4 3 7-9'],
+  ['proof', 'Proof', 'M6 7h3l1.5-3h3L15 7h3a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3ZM15.5 13.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0'],
+  ['manage', 'More', 'M4 8h10M18 8h2M4 16h2M10 16h10M18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0M10 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0'],
 ];
 
 export function AppShell({ view, links, unreadCount, busy, authBusy, onNew, onTheme, onLogout, children }) {
-  const title = sections.find(([key]) => key === view)?.[1] || 'Today';
+  const now = new Date(), hour = now.getHours();
+  const title = view === 'today' ? `${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'} 👋` : view === 'social' ? 'Friends' : sections.find(([key]) => key === view)?.[1];
   return <div className="app-shell">
     <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
-    <aside className="sidebar">
-      <Brand />
-      <span className="nav-caption">YOUR JOURNAL</span>
-      <nav className="journal-nav" aria-label="Main navigation">{sections.map(([key, label, path]) => <NavLink key={key} to={links[key]} viewTransition className={view === key ? 'on' : ''}>
-        <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" shapeRendering="crispEdges"><path d={path} /></svg><span>{label}</span>
-        {key === 'social' && unreadCount > 0 && <span className="tab-badge" aria-label="Unread messages">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-      </NavLink>)}</nav>
-      <div className="sidebar-bottom"><img src={woodland} alt="" /><p>A little further,<br /><strong>every day.</strong></p><div className="sidebar-controls"><button onClick={onTheme}>◐ Theme</button><button disabled={authBusy} onClick={onLogout}>Log out ↗</button></div></div>
-    </aside>
-    <div className="workspace">
-      <div className="workspace-meta"><span>FIELD NOTES <span aria-hidden="true">/</span> {title.toUpperCase()}</span><time dateTime={new Date().toLocaleDateString('en-CA')}>{new Date().toLocaleDateString('en-IN', { weekday:'short', day:'numeric', month:'short', year:'numeric' })}</time></div>
-      <section className="route-stage" key={view}>
-        <header className="workspace-heading"><div><h1>{view === 'today' ? 'Make room for the everyday.' : title}</h1><p>{view === 'today' ? 'A few small things. A little closer to who you want to be.' : 'Your habits, one page at a time.'}</p></div><button className="cta" disabled={busy} onClick={onNew}>+ New habit</button></header>
-        {children}
-      </section>
-      <footer className="world-footer"><span>HABIT TRACKER · YOUR FIELD JOURNAL</span><span>Progress over perfection.</span></footer>
-    </div>
+    <header className="app-top"><button className="round-button" onClick={onTheme} aria-label="Switch theme">◐</button><div><h1>{title}</h1><time dateTime={now.toLocaleDateString('en-CA')}>Today {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</time></div><button className="round-button new-habit" disabled={busy} onClick={onNew} aria-label="New habit">+</button></header>
+    <div className="route-stage" key={view}>{children}</div>
+    <footer className="account-controls"><Link to={links.social}>Friends {unreadCount > 0 && <span className="tab-badge" aria-label="Unread messages">{unreadCount > 9 ? '9+' : unreadCount}</span>}</Link><button disabled={authBusy} onClick={onLogout}>Log out ↗</button></footer>
+    <nav className="floating-nav" aria-label="Main navigation">{sections.map(([key, label, path]) => {
+      const active = view === key || key === 'manage' && view === 'social';
+      return <NavLink key={key} to={links[key]} viewTransition aria-label={label === 'More' ? 'More — Habits' : label} className={active ? 'on' : ''}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg><span>{label}</span>
+      </NavLink>;
+    })}</nav>
   </div>;
 }

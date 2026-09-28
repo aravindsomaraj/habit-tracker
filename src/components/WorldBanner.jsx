@@ -1,9 +1,9 @@
-import woodland from '../../assets/images/woodland.svg';
+import { DecorativeShapes } from './DecorativeShapes.jsx';
 
 export function WorldBanner({ title = 'One small step. A little more progress.', subtitle = 'Build habits. Find your rhythm. Keep exploring.' }) {
   return <section className="world-banner" aria-label="Your habit journal">
     <div className="world-copy"><span className="eyebrow">YOUR EVERYDAY ADVENTURE</span><h1>{title}</h1><p>{subtitle}</p></div>
-    <img src={woodland} alt="" aria-hidden="true" />
+    <DecorativeShapes />
   </section>;
 }
 
