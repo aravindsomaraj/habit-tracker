@@ -12,6 +12,10 @@ order to a new project:
 6. `20261003_handle_onboarding.sql`
 7. `20261003_handle_social_compatibility.sql`
 8. `20261004_fix_social_relationship_profiles.sql`
+9. `20261004_community_feed.sql`
+
+For Community feed publishing, follow [COMMUNITY.md](COMMUNITY.md). The Community
+migration must be applied before deploying the updated frontend.
 
 For the current production project, handle onboarding is already applied. Apply
 the compatibility migration and then the relationship-profile fix; do not run the historical

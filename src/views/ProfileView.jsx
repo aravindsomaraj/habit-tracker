@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { stats, totalXP } from '../lib/tracker.js';
+import { CommunityProfile, CommunitySettings } from '../components/Community.jsx';
 
 export function initials(name = '') {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
@@ -11,6 +12,7 @@ function Avatar({ profile, large = false }) {
 
 export function ProfileView({ social, user, habits, entries, profileId }) {
   const own = !profileId || profileId === social.profile?.id;
+  if (!own && social.community && !social.friends.some(item => item.id === profileId)) return <CommunityProfile community={social.community} profileId={profileId} userId={social.profile?.id} />;
   if (own && social.profileStatus === 'loading') return <div className="card"><p className="sub">Loading profile settings…</p></div>;
   if (own && social.profileStatus === 'error') return <div className="card"><h2>Profile settings unavailable</h2><p role="alert">{social.profileError}</p><button className="pillbtn" onClick={social.refreshProfile}>Try again</button></div>;
   if (!own && social.status === 'loading') return <div className="card"><p className="sub">Loading profile…</p></div>;
@@ -18,6 +20,7 @@ export function ProfileView({ social, user, habits, entries, profileId }) {
 
   if (profileId && profileId !== social.profile?.id) {
     const friend = social.friends.find((item) => item.id === profileId);
+    if (!friend && social.community) return <CommunityProfile community={social.community} profileId={profileId} userId={social.profile?.id} />;
     if (!friend) return <div className="card"><h2>Profile unavailable</h2><p className="sub">Only accepted friends’ profiles can be opened here.</p></div>;
     const score = social.leaderboard.find((item) => item.user_id === friend.id);
     const recent = social.feed.filter((item) => item.actor_id === friend.id).slice(0, 5);
@@ -27,10 +30,11 @@ export function ProfileView({ social, user, habits, entries, profileId }) {
       {friend.bio && <section className="card"><h2>About</h2><p>{friend.bio}</p></section>}
       <section className="card"><h2>Shared with you</h2><div className="profile-stats"><div><b>{score?.rank ? `#${score.rank}` : '—'}</b><span>weekly rank</span></div><div><b>{score?.completion_count || 0}</b><span>completions</span></div><div><b>{score?.active_days || 0}</b><span>active days</span></div></div><button className="cta" onClick={() => social.openChat(friend)}>Message {friend.display_name}</button></section>
       <section className="card"><h2>Recent activity</h2>{recent.length ? <div className="social-feed">{recent.map((item) => <div key={item.id}><span className="social-avatar">✓</span><p>Completed <b>{item.habit_label}</b><small>{item.occurred_on}</small></p></div>)}</div> : <p className="sub">No completion activity is currently shared with you.</p>}</section>
+      {social.community && <CommunityProfile community={social.community} profileId={profileId} userId={social.profile?.id} compact />}
     </>;
   }
 
-  return <OwnProfile social={social} user={user} habits={habits} entries={entries} />;
+  return <><OwnProfile social={social} user={user} habits={habits} entries={entries} /><CommunitySettings community={social.community} /></>;
 }
 
 function OwnProfile({ social, user, habits, entries }) {

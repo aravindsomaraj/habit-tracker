@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { normalizeHandle } from '../lib/handles.js';
 import { Link, NavLink } from 'react-router';
 import { weekStartKey } from '../hooks/useSocial.js';
+import { CommunityFeed } from '../components/Community.jsx';
 
 const socialTabs = [
   ['/social/activity', 'Activity'],
@@ -11,18 +12,29 @@ const socialTabs = [
 ];
 
 export function SocialView({ social, habits, section = 'activity', onOpenSharing }) {
-  if (section !== 'leaderboard' && social.status === 'loading') return <div className="card"><p className="sub">Loading your social circle…</p></div>;
-  if (section !== 'leaderboard' && social.status === 'error') return <div className="card"><h2>Social is not set up yet</h2><p className="sub">{social.error}</p></div>;
+  if (section !== 'leaderboard' && !(section === 'activity' && social.community) && social.status === 'loading') return <div className="card"><p className="sub">Loading your social circle…</p></div>;
+  if (section !== 'leaderboard' && !(section === 'activity' && social.community) && social.status === 'error') return <div className="card"><h2>Social is not set up yet</h2><p className="sub">{social.error}</p></div>;
   if (!social.profile?.handle) return <div className="card social-welcome"><span className="social-welcome-icon">👋</span><h2>Build habits with people you trust</h2><p className="sub">Reload to choose your handle before using Social.</p></div>;
   return <>
     <nav className="social-tabs" aria-label="Social sections">{socialTabs.map(([path, label]) => <NavLink key={path} to={path} className={({ isActive }) => isActive ? 'on' : ''}>{label}{label === 'Friends' && social.receivedCount > 0 && <span className="tab-badge">{social.receivedCount}</span>}</NavLink>)}</nav>
     {social.unreadError && <p className="banner" role="status">Unread counts are unavailable. You can still open chats.</p>}
     {social.message && <p className="banner" role="status">{social.message}</p>}
-    {section === 'leaderboard' ? <Leaderboard social={social} /> : section === 'friends' ? <Friends social={social} habits={habits} onOpenSharing={onOpenSharing} /> : <Activity social={social} />}
+    {section === 'leaderboard' ? <Leaderboard social={social} /> : section === 'friends' ? <Friends social={social} habits={habits} onOpenSharing={onOpenSharing} /> : <Activity social={social} onOpenSharing={onOpenSharing} />}
   </>;
 }
 
-function Activity({ social }) {
+function Activity({ social, onOpenSharing }) {
+  const [audience, setAudience] = useState('community');
+  if (social.community) return <>
+    <div className="feed-tabs" role="group" aria-label="Activity audience"><button className={`pillbtn ${audience === 'community' ? 'on' : ''}`} aria-pressed={audience === 'community'} onClick={() => setAudience('community')}>Community</button><button className={`pillbtn ${audience === 'friends' ? 'on' : ''}`} aria-pressed={audience === 'friends'} onClick={() => setAudience('friends')}>Friends</button></div>
+    {audience === 'community' ? <CommunityFeed community={social.community} userId={social.profile.id} onOpenSharing={onOpenSharing} /> : <FriendActivity social={social} />}
+  </>;
+  return <FriendActivity social={social} />;
+}
+
+function FriendActivity({ social }) {
+  if (social.status === 'loading') return <section className="card"><p>Loading friend activity…</p></section>;
+  if (social.status === 'error') return <section className="card"><p role="alert">{social.error}</p></section>;
   const mine = (social.leaderboard || []).find((row) => row.user_id === social.profile.id);
   return <>
     <section className="social-hero"><span className="eyebrow">YOUR CIRCLE THIS WEEK</span><h2>{mine ? `You’re #${mine.rank}` : 'Show up together'}</h2><p>{mine ? `${mine.completion_count} shared completion${Number(mine.completion_count) === 1 ? '' : 's'} across ${mine.active_days} active day${Number(mine.active_days) === 1 ? '' : 's'}.` : social.profileStatus === 'error' ? 'Profile settings are temporarily unavailable.' : social.profile.leaderboard_enabled ? 'Share a completion to enter this week’s ranking.' : 'Turn on leaderboard participation in Profile when you’re ready.'}</p><Link className="cta" to="/social/leaderboard">View leaderboard</Link></section>

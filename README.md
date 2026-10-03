@@ -176,6 +176,18 @@ Progress in the primary navigation.
 For handle onboarding architecture and acceptance checks, see [HANDLES.md](HANDLES.md) for architecture, security,
 remote deployment status, exact migration/verification steps, and manual tests.
 
+## Community feed
+
+Social → Activity now offers Community and Friends feeds. Community browsing is
+available to signed-in users. Publishing requires opting in under Profile and
+choosing individual habits under Manage sharing. Only new completion events are
+published; existing data remains private. Blocks and reports are available on
+community cards, and the feed supports cursor pagination.
+
+Apply `database/migrations/20261004_community_feed.sql` after the relationship
+profile fix and before deploying. See [COMMUNITY.md](database/COMMUNITY.md) for
+publishing semantics, access rules, report review and verification.
+
 ## Private proof photos
 
 The existing private `proof-photos` bucket and Storage policies are required.

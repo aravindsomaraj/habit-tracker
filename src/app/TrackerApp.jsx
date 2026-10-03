@@ -9,6 +9,7 @@ import { Modal } from '../components/Modal.jsx';
 import { SharingModal } from '../components/SharingModal.jsx';
 import { useHabits } from '../hooks/useHabits.js';
 import { useSocial } from '../hooks/useSocial.js';
+import { useCommunity } from '../hooks/useCommunity.js';
 import { entryOf, stats } from '../lib/tracker.js';
 import { CalendarView } from '../views/CalendarView.jsx';
 import { GraphView } from '../views/GraphView.jsx';
@@ -50,7 +51,9 @@ export function TrackerApp({ auth, profile }) {
   const [modal, setModal] = useState(null), [toast, setToast] = useState(''), [burst, setBurst] = useState(0);
   const showToast = useCallback((text) => setToast(text), []);
   const clearToast = useCallback(() => setToast(''), []);
-  const social = useSocial(auth.client, userId, showToast, profile);
+  const socialState = useSocial(auth.client, userId, showToast, profile);
+  const community = useCommunity(auth.client, userId, socialState.recordCompletion);
+  const social = { ...socialState, community };
 
   useEffect(() => {
     if (!store.habits.length) { setSelected(null); return; }
