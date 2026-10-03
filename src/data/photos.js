@@ -1,4 +1,5 @@
 import { readPages, writeEntryRow } from './habits.js';
+import { validateImage } from '../lib/images.js';
 
 const PROOF_BUCKET = 'proof-photos';
 const photoUrls = new Map();
@@ -32,10 +33,7 @@ async function currentPhotoPath(client, habitId, entryDate) {
 }
 
 export async function replaceProofPhoto(client, owner, habit, entryDate, file, ensureCurrent = () => {}) {
-  const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-  const extension = extensions[file.type];
-  if (!extension) throw new Error('Choose a JPEG, PNG, or WebP image.');
-  if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Choose a non-empty image of 5 MB or less.');
+  const extension = validateImage(file);
   const previous = await currentPhotoPath(client, habit.id, entryDate);
   ensureCurrent();
   if (previous) checkPhotoPath(previous, owner);

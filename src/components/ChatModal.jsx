@@ -1,3 +1,4 @@
+import { Avatar } from './Avatar.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { loadMessages, sendMessage } from '../data/social.js';
 
@@ -40,7 +41,7 @@ export function ChatModal({ client, profile, chat, onClose, onRead }) {
     } catch (sendError) { window.alert(sendError.message || 'Could not send your message.'); }
     finally { setSending(false); }
   }
-  return <><div className="chat-head"><div><h3>Chat with {chat.friend.display_name}</h3><p className="sub">Only you and {chat.friend.display_name} can read these messages.</p></div><button className="pillbtn" onClick={onClose}>Close</button></div>
+  return <><div className="chat-head"><Avatar client={client} profile={chat.friend} /><div><h3>Chat with {chat.friend.display_name}</h3><p className="sub">Only you and {chat.friend.display_name} can read these messages.</p></div><button className="pillbtn" onClick={onClose}>Close</button></div>
     <div ref={box} className="chat-messages" role="log" aria-live="polite">{loading ? <p className="tiny">Loading messages…</p> : error ? <p className="tiny">Could not load messages. {error}</p> : !messages.length ? <p className="tiny">No messages yet. Say hello.</p> : messages.map((message) => {
       const mine = message.sender_id === profile.id;
       return <div className={`chat-message ${mine ? 'mine' : ''}`} key={message.id}><span>{message.body}</span><small>{mine ? 'You' : chat.friend.display_name} · {new Date(message.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</small></div>;

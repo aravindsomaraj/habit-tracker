@@ -1,6 +1,6 @@
 import { handleError, normalizeHandle } from '../lib/handles.js';
 
-export const PROFILE_FIELDS = 'id,handle,display_name';
+export const PROFILE_FIELDS = 'id,handle,display_name,avatar_path';
 
 export async function loadProfile(client, userId) {
   const { data, error } = await client.from('profiles').select(PROFILE_FIELDS).eq('id', userId).maybeSingle();

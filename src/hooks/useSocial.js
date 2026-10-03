@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { changeAvatar, cleanupAvatar } from '../data/avatars.js';
 import {
-  friendshipRpc, loadFriendProfiles, loadLeaderboard, loadOwnSettings, loadSocialData,
+  findFriend, friendshipRpc, loadFriendProfiles, loadLeaderboard, loadOwnSettings, loadSocialData,
   loadUnreadChats, markChatRead, requestFriend, saveProfile,
   setHabitShare as writeHabitShare, startConversation,
 } from '../data/social.js';
@@ -23,6 +24,10 @@ export function useSocial(client, userId, onToast, initialProfile) {
   const [profileStatus, setProfileStatus] = useState('loading'), [profileError, setProfileError] = useState('');
   const [friendProfiles, setFriendProfiles] = useState([]), [friendProfilesError, setFriendProfilesError] = useState('');
   const [message, setMessage] = useState('');
+  const [avatarBusy, setAvatarBusy] = useState(false), [avatarMessage, setAvatarMessage] = useState('');
+  const [avatarCleanup, setAvatarCleanup] = useState([]), [profileSaving, setProfileSaving] = useState(false);
+  const accountRef = useRef({ client, userId });
+  accountRef.current = { client, userId };
   const [unread, setUnread] = useState({}), [unreadError, setUnreadError] = useState('');
   const [chat, setChat] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -33,6 +38,7 @@ export function useSocial(client, userId, onToast, initialProfile) {
   profileRef.current = profile; dataRef.current = data; chatRef.current = chat;
 
   const refreshProfile = useCallback(async () => {
+    if (pending.current.has('profile')) return;
     const current = generation.current, request = ++settingsRequest.current;
     setProfileStatus('loading'); setProfileError('');
     try {
@@ -77,7 +83,11 @@ export function useSocial(client, userId, onToast, initialProfile) {
       setData(loaded); setStatus('ready'); setError('');
       // A remote remove/block is learned through authorized refreshes. Close any
       // conversation whose friendship has disappeared, clearing its local history.
-      setChat((currentChat) => currentChat && !loaded.friends.some((friend) => friend.id === currentChat.friend.id) ? null : currentChat);
+      setChat((currentChat) => {
+        if (!currentChat) return null;
+        const friend = loaded.friends.find((person) => person.id === currentChat.friend.id);
+        return friend ? { ...currentChat, friend } : null;
+      });
       // Bios have their own failure surface. Friends/chat need only identity.
       try {
         const people = await loadFriendProfiles(client, loaded.friends.map((friend) => friend.id));
@@ -96,6 +106,8 @@ export function useSocial(client, userId, onToast, initialProfile) {
   useEffect(() => {
     ++generation.current;
     setData(emptyData); setSettings(null); setUnread({}); setChat(null); setMessage('');
+    pending.current = new Set();
+    setAvatarBusy(false); setProfileSaving(false); setAvatarMessage(''); setAvatarCleanup([]);
     setStatus('loading'); setFriendProfiles([]); setFriendProfilesError('');
     setLeaderboard([]); setUnreadError('');
     load(); refreshProfile(); refreshBoard(); refreshUnread();
@@ -151,7 +163,7 @@ export function useSocial(client, userId, onToast, initialProfile) {
   const updateProfile = useCallback(async (fields) => {
     if (pending.current.has('profile')) return false;
     const current = generation.current;
-    pending.current.add('profile'); ++settingsRequest.current;
+    pending.current.add('profile'); ++settingsRequest.current; setProfileSaving(true);
     try {
       const saved = await saveProfile(client, fields);
       if (current !== generation.current) return false;
@@ -161,10 +173,51 @@ export function useSocial(client, userId, onToast, initialProfile) {
     } catch (failure) {
       if (current === generation.current) setMessage(failure.message || 'Could not save your profile.');
       return false;
-    } finally { pending.current.delete('profile'); }
+    } finally { if (current === generation.current) { pending.current.delete('profile'); setProfileSaving(false); } }
   }, [client, refreshBoard]);
 
+  const updateAvatar = useCallback(async (file, cleanupPaths) => {
+    if (pending.current.has('profile')) return false;
+    const current = generation.current;
+    const ensureCurrent = () => {
+      if (current !== generation.current || accountRef.current.client !== client || accountRef.current.userId !== userId) {
+        throw new Error('Your account changed. Reload your profile.');
+      }
+    };
+    pending.current.add('profile'); ++settingsRequest.current;
+    setAvatarBusy(true); setAvatarMessage('');
+    try {
+      if (cleanupPaths) {
+        for (const path of cleanupPaths) {
+          await cleanupAvatar(client, userId, path, ensureCurrent);
+          ensureCurrent(); setAvatarCleanup((paths) => paths.filter((item) => item !== path));
+        }
+        setAvatarMessage('Unused photo files deleted.');
+      } else {
+        const result = await changeAvatar(client, userId, file, ensureCurrent);
+        ensureCurrent(); ++settingsRequest.current;
+        profileRef.current = result.profile; setSettings(result.profile);
+        setProfileStatus('ready'); setProfileError('');
+        setAvatarMessage(result.warning || (file === null ? 'Photo removed.' : 'Photo updated.'));
+        if (result.cleanupPath) setAvatarCleanup((paths) => [...new Set([...paths, result.cleanupPath])]);
+        // Own leaderboard identity updates immediately, even if its refresh fails.
+        setLeaderboard((rows) => rows.map((row) => row.user_id === userId ? { ...row, avatar_path: result.profile.avatar_path } : row));
+        refreshBoard();
+      }
+      return true;
+    } catch (failure) {
+      if (current === generation.current && accountRef.current.userId === userId && accountRef.current.client === client) {
+        setAvatarMessage(failure.message || 'Could not change your photo.');
+        if (failure.cleanupPath) setAvatarCleanup((paths) => [...new Set([...paths, failure.cleanupPath])]);
+      }
+      return false;
+    } finally {
+      if (current === generation.current) { pending.current.delete('profile'); setAvatarBusy(false); }
+    }
+  }, [client, userId, refreshBoard]);
+
   const sendRequest = useCallback((handle) => run(`request:${handle}`, () => requestFriend(client, profileRef.current, handle), 'Friend request sent.'), [client, run]);
+  const searchFriend = useCallback((handle) => findFriend(client, profileRef.current, handle), [client]);
   const updateFriendship = useCallback((action, id) => run(`${action}:${id}`, async () => {
     await friendshipRpc(client, action, id);
     if (action !== 'accept') setChat(null);
@@ -192,6 +245,7 @@ export function useSocial(client, userId, onToast, initialProfile) {
   const refreshCompletion = useCallback(() => { load(); refreshBoard(); }, [load, refreshBoard]);
   const friends = data.friends.map((friend) => ({ ...friend, bio: friendProfiles.find((person) => person.id === friend.id)?.bio }));
   return {
+    client, avatarBusy, avatarMessage, avatarCleanup, updateAvatar, profileSaving, searchFriend,
     ...data, friends, profile, status, error, message, profileStatus, profileError, friendProfilesError, unreadError,
     unreadCount: Object.keys(unread).length, receivedCount: data.requests.filter((row) => row.addressee_id === userId).length,
     chat, leaderboard, leaderboardWeek, leaderboardStatus, leaderboardError,

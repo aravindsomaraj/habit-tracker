@@ -11,18 +11,23 @@ order to a new project:
 5. `20260922_add_direct_chat.sql`
 6. `20261003_handle_onboarding.sql`
 7. `20261003_handle_social_compatibility.sql`
-8. `20261004_fix_social_relationship_profiles.sql`
-9. `20261004_community_feed.sql`
+8. `20261003_profile_avatar.sql`
+9. `20261004_fix_social_relationship_profiles.sql`
+10. `20261004_community_feed.sql`
 
 For Community feed publishing, follow [COMMUNITY.md](COMMUNITY.md). The Community
 migration must be applied before deploying the updated frontend.
 
 For the current production project, handle onboarding is already applied. Apply
-the compatibility migration and then the relationship-profile fix; do not run the historical
+only unapplied migrations in the order above: compatibility, avatars, the
+relationship-profile fix, then Community. Do not run the historical
 `20261003_social_profiles.sql` after onboarding. The compatibility migration
 supports either historical path and installs missing Social support itself.
 See [the compatibility guide](SOCIAL_COMPATIBILITY.md) for the access design,
 exact deployment order and rollback-only behavioral verification SQL.
+Run that stage's verification before applying the avatar migration, which extends
+the exact public/RPC output contracts. See [the avatar guide](PROFILE_AVATARS.md)
+for its read-only checks, Storage policies, failure handling and HTTP smoke tests.
 
 For an existing project, apply only unapplied migrations. The new handle migration
 retains the existing profiles table, handles, UUIDs and private/social data.

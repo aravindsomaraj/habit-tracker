@@ -25,7 +25,7 @@ beforeEach(() => {
   mock.client = {
     from: vi.fn((table) => {
       expect(table).toBe('profiles'); let id;
-      return { select(fields) { expect(fields).toBe('id,handle,display_name'); return this; }, eq(_column, value) { id = value; return this; }, maybeSingle: async () => ({ data: profiles.get(id) || null, error: null }) };
+      return { select(fields) { expect(fields).toBe('id,handle,display_name,avatar_path'); return this; }, eq(_column, value) { id = value; return this; }, maybeSingle: async () => ({ data: profiles.get(id) || null, error: null }) };
     }),
     rpc: vi.fn(async (name, { candidate }) => {
       if (name === 'handle_available') return { data: ![...profiles.values()].some((p) => p.handle === candidate), error: null };
@@ -210,7 +210,7 @@ describe('public identity in Friends', () => {
     const query = { select: (fields) => { select(fields); return query; }, eq: (...args) => { eq(...args); return query; }, maybeSingle: async () => ({ data: { id: 'friend-id', handle: 'friend' } }) };
     const client = { from: (table) => table === 'profiles' ? query : { insert } };
     await requestFriend(client, { id: 'my-id', handle: 'mine' }, ' @FrIeNd ');
-    expect(select).toHaveBeenCalledWith('id,handle,display_name'); expect(eq).toHaveBeenCalledWith('handle', 'friend');
+    expect(select).toHaveBeenCalledWith('id,handle,display_name,avatar_path'); expect(eq).toHaveBeenCalledWith('handle', 'friend');
     expect(insert).toHaveBeenCalledWith({ requester_id: 'my-id', addressee_id: 'friend-id', status: 'pending' });
     query.maybeSingle = async () => ({ data: { id: 'my-id', handle: 'old_name' } });
     await expect(requestFriend(client, { id: 'my-id', handle: 'mine' }, 'old_name')).rejects.toThrow('yourself');

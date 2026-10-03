@@ -87,7 +87,7 @@ export async function markChatRead(client, conversationId, throughTime) {
   if (result.error) throw result.error;
 }
 
-export async function requestFriend(client, profile, handle) {
+export async function findFriend(client, profile, handle) {
   if (!profile?.handle) throw new Error('Choose your handle before adding friends.');
   const candidate = normalizeHandle(handle);
   // Existing reserved handles remain searchable.
@@ -98,7 +98,12 @@ export async function requestFriend(client, profile, handle) {
   if (found.error) throw found.error;
   if (!found.data) throw new Error('No discoverable profile has that handle.');
   if (found.data.id === profile.id) throw new Error('You cannot add yourself.');
-  const result = await client.from('friendships').insert({ requester_id: profile.id, addressee_id: found.data.id, status: 'pending' });
+  return found.data;
+}
+
+export async function requestFriend(client, profile, handle) {
+  const person = await findFriend(client, profile, handle);
+  const result = await client.from('friendships').insert({ requester_id: profile.id, addressee_id: person.id, status: 'pending' });
   if (result.error) throw result.error;
 }
 

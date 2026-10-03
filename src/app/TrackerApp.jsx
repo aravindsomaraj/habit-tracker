@@ -148,7 +148,7 @@ export function TrackerApp({ auth, profile }) {
 
   const dayEntry = modal?.type === 'day' ? entryOf(store.entries, modal.habit, modal.entryDate) || {} : null;
   return <>
-    <AppShell view={view} links={{ today: '/today', progress: habitPath('progress'), calendar: habitPath('calendar'), social: '/social/activity', manage: '/habits', profile: '/profile' }} socialCount={social.unreadCount + social.receivedCount} profile={social.profile || profile} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
+    <AppShell client={auth.client} view={view} links={{ today: '/today', progress: habitPath('progress'), calendar: habitPath('calendar'), social: '/social/activity', manage: '/habits', profile: '/profile' }} socialCount={social.unreadCount + social.receivedCount} profile={social.profile || profile} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
       <Banner>{auth.accountMessage}</Banner><Banner>{store.message}</Banner>
       <main id="main-content" tabIndex={-1} aria-busy={store.busy || store.status === 'loading'} inert={store.busy || store.status === 'loading'}>{content}</main>
     </AppShell>

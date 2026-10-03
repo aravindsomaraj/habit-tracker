@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { stats, totalXP } from '../lib/tracker.js';
 import { CommunityProfile, CommunitySettings } from '../components/Community.jsx';
-
-export function initials(name = '') {
-  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-}
-
-function Avatar({ profile, large = false }) {
-  return <span className={`profile-avatar${large ? ' large' : ''}`} aria-hidden="true">{initials(profile?.display_name)}</span>;
-}
+import { Avatar } from '../components/Avatar.jsx';
+import { AvatarControls } from '../components/AvatarControls.jsx';
 
 export function ProfileView({ social, user, habits, entries, profileId }) {
   const own = !profileId || profileId === social.profile?.id;
@@ -25,7 +19,7 @@ export function ProfileView({ social, user, habits, entries, profileId }) {
     const score = social.leaderboard.find((item) => item.user_id === friend.id);
     const recent = social.feed.filter((item) => item.actor_id === friend.id).slice(0, 5);
     return <>
-      <section className="card profile-hero"><Avatar profile={friend} large /><div><h2>{friend.display_name}</h2><p className="sub">@{friend.handle}</p></div></section>
+      <section className="card profile-hero"><Avatar client={social.client} profile={friend} large /><div><h2>{friend.display_name}</h2><p className="sub">@{friend.handle}</p></div></section>
       {social.friendProfilesError && <p role="alert">{social.friendProfilesError}</p>}
       {friend.bio && <section className="card"><h2>About</h2><p>{friend.bio}</p></section>}
       <section className="card"><h2>Shared with you</h2><div className="profile-stats"><div><b>{score?.rank ? `#${score.rank}` : '—'}</b><span>weekly rank</span></div><div><b>{score?.completion_count || 0}</b><span>completions</span></div><div><b>{score?.active_days || 0}</b><span>active days</span></div></div><button className="cta" onClick={() => social.openChat(friend)}>Message {friend.display_name}</button></section>
@@ -42,7 +36,8 @@ function OwnProfile({ social, user, habits, entries }) {
   const [fields, setFields] = useState(() => valuesFor(profile));
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState('');
-  useEffect(() => setFields(valuesFor(profile)), [profile]);
+  // Changing only the photo must not discard an unsaved settings draft.
+  useEffect(() => setFields(valuesFor(profile)), [profile?.id, profile?.display_name, profile?.handle, profile?.bio, profile?.discoverable, profile?.leaderboard_enabled]);
   const summary = useMemo(() => ({
     points: totalXP(habits, entries),
     completions: habits.reduce((sum, habit) => sum + stats(habit, entries).done, 0),
@@ -63,11 +58,11 @@ function OwnProfile({ social, user, habits, entries }) {
   }
 
   return <>
-    <section className="card profile-hero"><Avatar profile={profile || { display_name: fields.displayName }} large /><div><h2>{profile ? profile.display_name : 'Create your profile'}</h2><p className="sub">{profile ? `@${profile.handle}` : 'Join your accountability circle'}</p></div></section>
+    <section className="card profile-hero"><Avatar client={social.client} profile={profile || { display_name: fields.displayName }} large /><div><h2>{profile ? profile.display_name : 'Create your profile'}</h2><p className="sub">{profile ? `@${profile.handle}` : 'Join your accountability circle'}</p>{profile && <AvatarControls social={social} disabled={saving} />}</div></section>
     {social.message && <p className="banner" role="status">{social.message}</p>}
     <section className="card"><h2>{profile ? 'Edit profile' : 'Set up your profile'}</h2><p className="sub">This is how accepted friends see you. Your email and habit details stay private.</p>
       <form onSubmit={submit} aria-busy={saving}>
-        <fieldset className="profile-fields" disabled={saving}>
+        <fieldset className="profile-fields" disabled={saving || social.avatarBusy}>
           <label className="f"><span>Display name</span><input required maxLength="40" autoComplete="nickname" value={fields.displayName} onChange={(event) => update('displayName', event.target.value)} /></label>
           <label className="f"><span>Handle</span><input required maxLength="24" autoComplete="username" placeholder="e.g. madhav" value={fields.handle} onChange={(event) => update('handle', event.target.value)} /></label>
           <label className="f"><span>Bio</span><textarea maxLength="160" placeholder="A little about what keeps you moving" value={fields.bio} onChange={(event) => update('bio', event.target.value)} /></label>
