@@ -6,19 +6,20 @@ const api = vi.hoisted(() => ({ loadSocialData: vi.fn(), loadOwnSettings: vi.fn(
 vi.mock('../src/data/social.js', () => api);
 const profile = { id: 'owner', handle: 'original', display_name: 'Owner' };
 const friend = { id: 'friend', handle: 'friend', display_name: 'Friend' };
-let client, channels, toast;
+let client, channels, toast, bindings;
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const open = () => renderHook(() => useSocial(client, 'owner', toast, profile), { wrapper: StrictMode });
 beforeEach(() => {
-  vi.resetAllMocks(); channels = new Set(); toast = vi.fn();
-  client = { channel: vi.fn(() => { const channel = { on: () => channel, subscribe: () => { channels.add(channel); return channel; } }; return channel; }), removeChannel: vi.fn(channel => channels.delete(channel)) };
+  vi.resetAllMocks(); channels = new Set(); toast = vi.fn(); bindings = [];
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  client = { channel: vi.fn(() => { const channel = { on: (_type, filter, handler) => { bindings.push({ filter, handler }); return channel; }, subscribe: () => { channels.add(channel); return channel; } }; return channel; }), removeChannel: vi.fn(channel => channels.delete(channel)) };
   api.loadSocialData.mockResolvedValue({ profile, friends: [friend], requests: [], shares: [], feed: [] });
   api.loadOwnSettings.mockResolvedValue({ ...profile, bio: '', discoverable: true, leaderboard_enabled: false });
   api.loadFriendProfiles.mockResolvedValue([{ ...friend, bio: 'Reads daily' }]);
   api.loadLeaderboard.mockResolvedValue([]); api.loadUnreadChats.mockResolvedValue([]);
   api.startConversation.mockResolvedValue('conversation'); api.requestFriend.mockResolvedValue();
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe('independent social feature lifecycles', () => {
   it('keeps Friends and chat usable when the leaderboard fails', async () => {
     api.loadLeaderboard.mockRejectedValue(new Error('Board unavailable'));
@@ -70,12 +71,14 @@ describe('independent social feature lifecycles', () => {
     expect(result.current.leaderboard).toEqual([{ user_id: 'new' }]);
     expect(result.current.leaderboardWeek).toBe('2026-09-21');
   });
-  it('maintains one pair of subscriptions in Strict Mode and cleans them up', async () => {
+  it('maintains only the chat INSERT subscription in Strict Mode and cleans it up', async () => {
     const { result, unmount } = open(); await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(channels.size).toBe(2);
+    expect(channels.size).toBe(1);
+    expect(bindings.every(({ filter }) => filter.table === 'chat_messages' && filter.event === 'INSERT')).toBe(true);
     api.saveProfile.mockResolvedValue({ ...profile, handle: 'renamed' });
     await act(async () => { await result.current.updateProfile({ handle: 'renamed' }); });
-    expect(channels.size).toBe(2);
+    expect(channels.size).toBe(1);
+    expect(bindings.every(({ filter }) => filter.table === 'chat_messages' && filter.event === 'INSERT')).toBe(true);
     unmount(); expect(channels.size).toBe(0);
   });
   it('does not refresh or show a chat from an account that has unmounted', async () => {
@@ -85,4 +88,58 @@ describe('independent social feature lifecycles', () => {
     unmount(); await act(async () => { pending.resolve('late'); await opening; });
     expect(channels.size).toBe(0); expect(result.current.chat).toBeNull();
   });
+  it('refreshes private state through authorized reads every 30 seconds and closes remotely removed chats', async () => {
+    vi.useFakeTimers();
+    const { result, unmount } = open();
+    await act(async () => {});
+    expect(result.current.status).toBe('ready');
+    await act(async () => { await result.current.openChat(friend); });
+    expect(result.current.chat).not.toBeNull();
+    api.loadSocialData.mockResolvedValue({ profile, friends: [], requests: [{ id: 'request', addressee_id: 'owner' }], shares: [], feed: [] });
+    api.loadSocialData.mockClear(); api.loadUnreadChats.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.loadSocialData).toHaveBeenCalledTimes(1);
+    expect(api.loadUnreadChats).toHaveBeenCalledTimes(1);
+    expect(result.current.chat).toBeNull();
+    expect(result.current.friends).toEqual([]);
+    expect(result.current.receivedCount).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0); expect(channels.size).toBe(0);
+  });
+  it('skips background polling and refreshes on visibility/focus without overlapping requests', async () => {
+    vi.useFakeTimers(); const { unmount } = open(); await act(async () => {});
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    api.loadSocialData.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); window.dispatchEvent(new Event('focus')); });
+    expect(api.loadSocialData).not.toHaveBeenCalled();
+    const pending = deferred(); api.loadSocialData.mockReturnValueOnce(pending.promise);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.loadSocialData).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve({ profile, friends: [friend], requests: [], shares: [], feed: [] }); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(api.loadSocialData).toHaveBeenCalledTimes(2);
+    unmount(); api.loadSocialData.mockClear();
+    await act(async () => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.loadSocialData).not.toHaveBeenCalled();
+  });
+  it('uses existing message INSERTs to refresh Social while keeping instant unread notifications', async () => {
+    const { result } = open(); await waitFor(() => expect(result.current.status).toBe('ready'));
+    api.loadSocialData.mockClear();
+    api.loadUnreadChats.mockResolvedValue([{ conversation_id: 'conversation', sender_id: 'friend' }]);
+    await act(async () => { bindings.at(-1).handler({ new: { conversation_id: 'conversation', sender_id: 'friend' } }); });
+    expect(api.loadSocialData).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith('New message from Friend');
+    expect(result.current.unreadCount).toBe(1);
+  });
+  it('retains Friends when a polling leaderboard refresh fails and recovers on the next poll', async () => {
+    vi.useFakeTimers(); const { result } = open(); await act(async () => {});
+    api.loadLeaderboard.mockRejectedValueOnce(new Error('Board unavailable'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(result.current.leaderboardStatus).toBe('error');
+    expect(result.current.status).toBe('ready'); expect(result.current.friends[0].id).toBe('friend');
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(result.current.leaderboardStatus).toBe('ready');
+  });
+
 });

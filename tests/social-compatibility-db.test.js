@@ -6,7 +6,7 @@ const sql = (name) => readFileSync(new URL(`../database/${name}`, import.meta.ur
 const ids = Array.from({ length: 6 }, (_, i) => `10000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`);
 
 describe.each([false, true])('Social compatibility with historical social_profiles installed: %s', (historical) => {
-  let db, habit, otherHabit;
+  let db, habit, otherHabit, originalPolicies, originalPublicationFlags;
   const user = async (i) => {
     await db.exec('reset role');
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [i === null ? '' : ids[i]]);
@@ -25,6 +25,12 @@ describe.each([false, true])('Social compatibility with historical social_profil
     for (const name of ['20260921_habit_tracker','20260922_add_social','20260922_add_friend_controls','20260922_add_direct_chat']) await db.exec(sql(`migrations/${name}.sql`));
     if (historical) await db.exec(sql('migrations/20261003_social_profiles.sql'));
     await db.exec(sql('migrations/20261003_handle_onboarding.sql'));
+    await db.exec('create table public.unrelated_events(id integer primary key); alter publication supabase_realtime add table public.unrelated_events;');
+    originalPublicationFlags = (await db.query("select pubinsert,pubupdate,pubdelete,pubtruncate from pg_publication where pubname='supabase_realtime'")).rows;
+    originalPolicies = (await db.query("select policyname,cmd,permissive,qual,with_check from pg_policies where schemaname='public' and tablename='profiles' order by policyname")).rows;
+    // Explicit ACL hardening must remove permissive inherited grants as well.
+    await db.exec(`grant execute on function public.remove_friendship(uuid),public.block_friendship(uuid) to public,anon;
+      grant insert,update,delete on public.social_activities to public,anon,authenticated;`);
     // Existing data must survive the forward migration.
     for (const id of ids) await db.query('insert into auth.users(id,email) values ($1,$2)', [id, 'private@example.com']);
     for (let i = 0; i < 5; i++) await db.query('insert into public.profiles(id,handle,display_name,discoverable) values ($1,$2,$2,$3)', [ids[i], `person_${i}`, i !== 3]);
@@ -55,14 +61,41 @@ describe.each([false, true])('Social compatibility with historical social_profil
     const rows = (await db.query(sql('checks/20261003_handle_onboarding.sql'))).rows;
     expect(rows).toHaveLength(13); expect(rows.filter(row => !row.passed)).toEqual([]);
   });
-  it('restricts definers to fixed paths and authenticated callers', async () => {
+  it('preserves the complete profile policy set with only one block-aware SELECT policy', async () => {
+    const rows = (await db.query("select policyname,cmd,permissive,qual,with_check from pg_policies where schemaname='public' and tablename='profiles' order by policyname")).rows;
+    expect(rows).toEqual(originalPolicies);
+    expect(rows.filter(row => row.cmd === 'SELECT' || row.cmd === 'ALL')).toEqual([
+      expect.objectContaining({policyname:'profiles visible to their circle',cmd:'SELECT',qual:expect.stringContaining('blocked')})
+    ]);
+  });
+  it('restricts every definer ACL and path, including triggers and replaced friendship controls', async () => {
     const rows=(await db.query(`select p.proname,p.prosecdef,p.proconfig,
       has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated,
-      has_function_privilege('anon',p.oid,'EXECUTE') anonymous
+      has_function_privilege('anon',p.oid,'EXECUTE') anonymous,
+      exists(select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where a.grantee=0 and a.privilege_type='EXECUTE') public_execute
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname in ('own_profile_settings','save_profile_settings','friend_social_profiles','social_leaderboard_week')`)).rows;
-    expect(rows).toHaveLength(4);
-    for (const row of rows) expect(row).toMatchObject({prosecdef:true,proconfig:['search_path=""'],authenticated:true,anonymous:false});
+      where n.nspname='public' and p.proname in ('sync_social_completion','cleanup_social_relationship',
+        'remove_friendship','block_friendship','mark_social_chat_read','own_profile_settings',
+        'save_profile_settings','friend_social_profiles','social_leaderboard_week')`)).rows;
+    expect(rows).toHaveLength(9);
+    for (const row of rows) expect(row).toMatchObject({prosecdef:true,proconfig:['search_path=""'],
+      authenticated:!['sync_social_completion','cleanup_social_relationship'].includes(row.proname),anonymous:false,public_execute:false});
+  });
+  it('publishes only chat among Social tables and preserves unrelated publication members and flags', async () => {
+    const rows=(await db.query("select tablename from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' order by tablename")).rows;
+    expect(rows).toEqual([{tablename:'chat_messages'},{tablename:'unrelated_events'}]);
+    expect((await db.query("select pubinsert,pubupdate,pubdelete,pubtruncate from pg_publication where pubname='supabase_realtime'")).rows).toEqual(originalPublicationFlags);
+    expect((await db.query("select relreplident from pg_class where oid='public.chat_messages'::regclass")).rows[0].relreplident).toBe('d');
+  });
+  it.each(['INSERT','UPDATE','DELETE'])('explicitly denies activity %s despite permissive prior grants', async operation => {
+    const queries = {
+      INSERT: "insert into public.social_activities(actor_id,habit_id,habit_label,kind,occurred_on) values (auth.uid(),$1,'Forged','completed','2026-09-23')",
+      UPDATE: "update public.social_activities set habit_label='Forged' where habit_id=$1",
+      DELETE: 'delete from public.social_activities where habit_id=$1',
+    };
+    await user(1);
+    expect((await db.query("select has_table_privilege('authenticated','public.social_activities',$1) allowed",[operation])).rows[0].allowed).toBe(false);
+    await expect(db.query(queries[operation],[habit])).rejects.toMatchObject({code:'42501'});
   });
   it('reads directory identity and hides undiscoverable strangers without RLS recursion', async () => {
     await user(0);
@@ -149,8 +182,59 @@ describe.each([false, true])('Social compatibility with historical social_profil
     expect((await db.query('select id from public.profiles where id=$1',[ids[1]])).rows).toEqual([]);
     expect((await db.query('select * from public.friend_social_profiles($1)',[[ids[1]]])).rows).toEqual([]);
     expect((await board()).rows.map(row=>row.user_id)).not.toContain(ids[1]);
+    await user(1);
+    expect((await db.query('select id from public.profiles where id=$1',[ids[0]])).rows).toEqual([]);
+    expect((await db.query('select * from public.friend_social_profiles($1)',[[ids[0]]])).rows).toEqual([]);
+    expect((await db.query('select id from public.profiles where id=$1',[ids[4]])).rows).toEqual([{id:ids[4]}]);
+    expect((await db.query('select id from public.profiles where id=auth.uid()')).rows).toEqual([{id:ids[1]}]);
     await db.exec('reset role'); expect((await db.query('select * from public.direct_conversations')).rows).toEqual([]);
     expect((await db.query('select * from public.habit_shares where viewer_id=$1',[ids[0]])).rows).toEqual([]);
+  });
+  it.each(['remove','block','direct delete'])('%s permanently clears only this relationships chat and sharing', async action => {
+    const friendship=(await db.query('select id from public.friendships where requester_id=$1 and addressee_id=$2',[ids[0],ids[1]])).rows[0].id;
+    const conversation=(await db.query('select id from public.direct_conversations')).rows[0].id;
+    await user(1); await db.query('select public.mark_social_chat_read($1,now())',[conversation]);
+    await user(0);
+    if (action === 'direct delete') await db.query('delete from public.friendships where id=$1',[friendship]);
+    else await db.query(`select public.${action}_friendship($1)`,[friendship]);
+    await db.exec('reset role');
+    for (const table of ['direct_conversations','chat_messages','chat_reads']) expect((await db.query(`select * from public.${table}`)).rows).toEqual([]);
+    expect((await db.query('select * from public.habit_shares where viewer_id=$1',[ids[0]])).rows).toEqual([]);
+    expect((await db.query('select habit_id from public.habit_shares where viewer_id=$1',[ids[3]])).rows).toEqual([{habit_id:otherHabit}]);
+    expect((await db.query('select count(*)::int n from public.habits')).rows[0].n).toBe(2);
+    expect((await db.query('select count(*)::int n from public.habit_entries')).rows[0].n).toBe(2);
+    expect((await db.query('select value,photo_path from public.habit_entries where habit_id=$1',[habit])).rows[0]).toEqual({value:'999',photo_path:'secret/photo'});
+    expect((await db.query('select count(*)::int n from public.social_activities')).rows[0].n).toBe(2);
+    const remaining=(await db.query('select status from public.friendships where id=$1',[friendship])).rows;
+    expect(remaining).toEqual(action==='block'?[{status:'blocked'}]:[]);
+  });
+  it('does not allow either participant to erase an active block', async () => {
+    const friendship=(await db.query('select id from public.friendships where requester_id=$1 and addressee_id=$2',[ids[0],ids[1]])).rows[0].id;
+    await user(0); await db.query('select public.block_friendship($1)',[friendship]);
+    for (const i of [0,1]) {
+      await user(i);
+      expect((await db.query('delete from public.friendships where id=$1 returning id',[friendship])).rows).toEqual([]);
+      await db.exec('savepoint blocked');
+      await expect(db.query('select public.remove_friendship($1)',[friendship])).rejects.toThrow('unavailable');
+      await db.exec('rollback to blocked');
+    }
+  });
+  it.each(['remove','block'])('denies %s control to anon with NULL uid and unrelated authenticated users', async action => {
+    const friendship=(await db.query('select id from public.friendships where requester_id=$1 and addressee_id=$2',[ids[0],ids[1]])).rows[0].id;
+    await db.query("select set_config('request.jwt.claim.sub','',true)"); await db.exec('set local role anon; savepoint forbidden');
+    await expect(db.query(`select public.${action}_friendship($1)`,[friendship])).rejects.toMatchObject({code:'42501'});
+    await db.exec('rollback to forbidden');
+    for(const i of [4,null]) {
+      await user(i); await db.exec('savepoint forbidden');
+      await expect(db.query(`select public.${action}_friendship($1)`,[friendship])).rejects.toThrow('unavailable');
+      await db.exec('rollback to forbidden');
+    }
+  });
+  it('excludes forged historical missing, incomplete, rest and private habit activities from scores', async () => {
+    await db.query("insert into public.habit_entries(habit_id,entry_date,done,rest) values ($1,'2026-09-23',false,false),($1,'2026-09-24',true,true)",[habit]);
+    await db.query("insert into public.social_activities(actor_id,habit_id,habit_label,kind,occurred_on) values ($1,$2,'Invalid','completed','2026-09-23'),($1,$2,'Invalid','completed','2026-09-24'),($1,$2,'Invalid','completed','2026-09-25')",[ids[1],habit]);
+    await user(0);
+    expect((await board()).rows.find(row=>row.user_id===ids[1])).toMatchObject({completion_count:1,active_days:1});
   });
   it('denies anon every protected RPC and directory access', async () => {
     await db.exec('set local role anon');
@@ -162,7 +246,8 @@ describe.each([false, true])('Social compatibility with historical social_profil
     await db.exec('rollback; reset role;');
     const results = await db.exec(sql('checks/20261003_handle_social_compatibility.sql'));
     const rows = results.find(result => result.rows?.[0]?.check_name)?.rows;
-    expect(rows.length).toBeGreaterThanOrEqual(16);
+    expect(rows).toHaveLength(51);
+    expect(new Set(rows.map(row=>row.check_name)).size).toBe(51);
     expect(rows.filter(row => !row.passed)).toEqual([]);
     expect((await db.query('select count(*)::int n from auth.users')).rows[0].n).toBe(6);
   });

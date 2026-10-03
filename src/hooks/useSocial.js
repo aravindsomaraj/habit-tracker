@@ -75,6 +75,9 @@ export function useSocial(client, userId, onToast, initialProfile) {
       const loaded = await loadSocialData(client, userId, profileRef.current);
       if (current !== generation.current || request !== socialRequest.current) return;
       setData(loaded); setStatus('ready'); setError('');
+      // A remote remove/block is learned through authorized refreshes. Close any
+      // conversation whose friendship has disappeared, clearing its local history.
+      setChat((currentChat) => currentChat && !loaded.friends.some((friend) => friend.id === currentChat.friend.id) ? null : currentChat);
       // Bios have their own failure surface. Friends/chat need only identity.
       try {
         const people = await loadFriendProfiles(client, loaded.friends.map((friend) => friend.id));
@@ -102,18 +105,32 @@ export function useSocial(client, userId, onToast, initialProfile) {
   useEffect(() => {
     if (!profile?.id) return undefined;
     const current = generation.current;
+    let refreshing = false;
+    const refresh = async () => {
+      if (current !== generation.current || document.visibilityState === 'hidden' || refreshing) return;
+      refreshing = true;
+      try { await Promise.all([load(), refreshBoard(), refreshUnread()]); }
+      finally { refreshing = false; }
+    };
     const inbox = client.channel(`chat-inbox:${profile.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, ({ new: incoming }) => {
-      if (current !== generation.current || !incoming || incoming.sender_id === userId || incoming.conversation_id === chatRef.current?.conversationId) return;
+      if (current !== generation.current || !incoming) return;
+      refresh();
+      if (incoming.sender_id === userId || incoming.conversation_id === chatRef.current?.conversationId && document.visibilityState !== 'hidden') return;
       setUnread((value) => ({ ...value, [incoming.conversation_id]: incoming.sender_id }));
       const friend = dataRef.current.friends.find((item) => item.id === incoming.sender_id);
       onToast(`New message from ${friend ? friend.display_name : 'a friend'}`);
     }).subscribe();
-    const refresh = () => { if (current === generation.current) { load(); refreshBoard(); refreshUnread(); } };
-    const updates = client.channel(`social-updates:${profile.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'social_activities' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_shares' }, refresh).subscribe();
-    return () => { client.removeChannel(inbox); client.removeChannel(updates); };
+    // Relationship/share/read-state DELETE payloads do not have row-level
+    // authorization in Postgres Changes. Use RLS-scoped reads instead.
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      client.removeChannel(inbox);
+    };
   }, [client, profile?.id, userId, load, refreshBoard, refreshUnread, onToast]);
 
   const run = useCallback(async (key, action, successMessage = '') => {

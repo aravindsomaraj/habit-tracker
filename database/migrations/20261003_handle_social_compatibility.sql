@@ -6,7 +6,9 @@ alter table public.profiles
   add column if not exists bio text not null default '' check (char_length(bio) <= 160),
   add column if not exists leaderboard_enabled boolean not null default false;
 create index if not exists social_activities_actor_day_idx on public.social_activities(actor_id, occurred_on);
-revoke insert, delete on public.social_activities from authenticated;
+-- Activity is exclusively trigger-maintained. Explicitly revoke UPDATE as well,
+-- even if an older deployment granted it; SELECT remains protected by RLS.
+revoke insert, update, delete on public.social_activities from public, anon, authenticated;
 insert into public.social_activities(actor_id,habit_id,habit_label,kind,occurred_on)
 select h.user_id,h.id,left(h.name,100),'completed',e.entry_date
 from public.habit_entries e join public.habits h on h.id = e.habit_id
@@ -75,6 +77,11 @@ begin
   if not found then raise exception 'Friendship unavailable'; end if;
 end $$;
 
+-- CREATE OR REPLACE retains old ACLs. State the client-callable contract here
+-- instead of relying on a prior migration having revoked default EXECUTE.
+revoke all on function public.remove_friendship(uuid), public.block_friendship(uuid) from public, anon;
+grant execute on function public.remove_friendship(uuid), public.block_friendship(uuid) to authenticated;
+
 -- Read positions persist across refreshes and devices.
 create table if not exists public.chat_reads (
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -106,13 +113,24 @@ $$;
 revoke all on function public.mark_social_chat_read(uuid,timestamptz), public.social_unread_chats() from public, anon;
 grant execute on function public.mark_social_chat_read(uuid,timestamptz), public.social_unread_chats() to authenticated;
 
+-- DELETE events cannot be authorized through row RLS. In particular,
+-- habit_shares and chat_reads have private composite primary keys. None of these
+-- tables needs a direct subscription: the UI refreshes via authenticated reads.
+-- Remove legacy publication membership as well as avoiding new additions.
 do $$ declare t text; begin
   foreach t in array array['profiles','friendships','habit_shares','social_activities','chat_reads'] loop
-    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
-      execute format('alter publication supabase_realtime add table public.%I', t);
+    if exists (select 1 from pg_catalog.pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime drop table public.%I', t);
     end if;
   end loop;
+  if not exists (select 1 from pg_catalog.pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_messages') then
+    alter publication supabase_realtime add table public.chat_messages;
+  end if;
 end $$;
+-- Live chat needs INSERT events. Keep old/delete WAL records limited to the
+-- opaque message primary key, never body/sender/conversation fields. Publication
+-- event flags are shared by other tables and are deliberately not changed here.
+alter table public.chat_messages replica identity default;
 
 -- Table discovery stays exactly id/handle/display_name; no new SELECT grants.
 -- These definers are needed to read private columns without granting them to
