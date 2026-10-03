@@ -43,6 +43,7 @@ describe.each([false, true])('Social compatibility with historical social_profil
     await db.query("insert into public.chat_messages(conversation_id,sender_id,body) select id,$1,'Existing message' from public.direct_conversations",[ids[0]]);
     if (historical) await db.query("insert into public.chat_reads select $1,id,'2026-09-01'::timestamptz from public.direct_conversations",[ids[1]]);
     await db.exec(sql('migrations/20261003_handle_social_compatibility.sql'));
+    await db.exec(sql('migrations/20261004_fix_social_relationship_profiles.sql'));
     await db.query('update public.profiles set leaderboard_enabled=true,bio=$1 where id=any($2::uuid[])',['Friends bio',[ids[0],ids[1],ids[3],ids[4]]]);
     await db.exec('alter table public.profiles add column private_email text;');
   }, 30000);
@@ -76,8 +77,8 @@ describe.each([false, true])('Social compatibility with historical social_profil
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname in ('sync_social_completion','cleanup_social_relationship',
         'remove_friendship','block_friendship','mark_social_chat_read','own_profile_settings',
-        'save_profile_settings','friend_social_profiles','social_leaderboard_week')`)).rows;
-    expect(rows).toHaveLength(9);
+        'save_profile_settings','friend_social_profiles','social_relationship_profiles','social_leaderboard_week')`)).rows;
+    expect(rows).toHaveLength(10);
     for (const row of rows) expect(row).toMatchObject({prosecdef:true,proconfig:['search_path=""'],
       authenticated:!['sync_social_completion','cleanup_social_relationship'].includes(row.proname),anonymous:false,public_execute:false});
   });
@@ -128,6 +129,8 @@ describe.each([false, true])('Social compatibility with historical social_profil
   it('reveals bios only to accepted friends, not pending requests or discoverable strangers', async () => {
     await user(0);
     await db.query('insert into public.friendships(requester_id,addressee_id) values (auth.uid(),$1)',[ids[4]]);
+    expect((await db.query('select * from public.social_relationship_profiles($1)',[[ids[4]]])).rows)
+      .toEqual([{id:ids[4],handle:'person_4',display_name:'person_4'}]);
     const rows=(await db.query('select * from public.friend_social_profiles($1)',[ids])).rows;
     expect(rows.map(row=>row.id).sort()).toEqual(ids.slice(0,3));
     expect(Object.keys(rows[0])).toEqual(['id','handle','display_name','bio']);
@@ -181,6 +184,7 @@ describe.each([false, true])('Social compatibility with historical social_profil
     await db.query('select public.block_friendship($1)',[id]);
     expect((await db.query('select id from public.profiles where id=$1',[ids[1]])).rows).toEqual([]);
     expect((await db.query('select * from public.friend_social_profiles($1)',[[ids[1]]])).rows).toEqual([]);
+    expect((await db.query('select * from public.social_relationship_profiles($1)',[[ids[1]]])).rows).toEqual([]);
     expect((await board()).rows.map(row=>row.user_id)).not.toContain(ids[1]);
     await user(1);
     expect((await db.query('select id from public.profiles where id=$1',[ids[0]])).rows).toEqual([]);
@@ -238,7 +242,7 @@ describe.each([false, true])('Social compatibility with historical social_profil
   });
   it('denies anon every protected RPC and directory access', async () => {
     await db.exec('set local role anon');
-    for (const query of ['select id from public.profiles','select * from public.own_profile_settings()',"select * from public.save_profile_settings('x','abc','',true,true)","select * from public.friend_social_profiles('{}')","select * from public.social_leaderboard_week('2026-09-21')","select public.handle_available('abc')","select * from public.claim_handle('abc')"]) {
+    for (const query of ['select id from public.profiles','select * from public.own_profile_settings()',"select * from public.save_profile_settings('x','abc','',true,true)","select * from public.friend_social_profiles('{}')","select * from public.social_relationship_profiles('{}')","select * from public.social_leaderboard_week('2026-09-21')","select public.handle_available('abc')","select * from public.claim_handle('abc')"]) {
       await db.exec('savepoint denied'); await expect(db.query(query)).rejects.toMatchObject({code:'42501'}); await db.exec('rollback to denied');
     }
   });
@@ -254,6 +258,7 @@ describe.each([false, true])('Social compatibility with historical social_profil
   it('does not trust an authenticated role without auth.uid()', async () => {
     await user(null); expect((await db.query('select * from public.own_profile_settings()')).rows).toEqual([]);
     expect((await db.query('select * from public.friend_social_profiles($1)',[ids])).rows).toEqual([]);
+    expect((await db.query('select * from public.social_relationship_profiles($1)',[ids])).rows).toEqual([]);
     await expect(board()).rejects.toMatchObject({code:'42501'});
   });
 });

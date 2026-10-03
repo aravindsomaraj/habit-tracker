@@ -223,4 +223,20 @@ describe('public identity in Friends', () => {
     expect(await loadSocialData(mock.client, 'owner', { id: 'owner', handle: null })).toMatchObject({ friends: [], requests: [] });
     expect(mock.client.from).not.toHaveBeenCalled();
   });
+  it('loads pending request identities through the relationship-scoped RPC', async () => {
+    const friendshipQuery = { select() { return this; }, or() { return this; }, order: async () => ({ data: [{ id: 'request', requester_id: 'owner', addressee_id: 'friend', status: 'pending', created_at: '2026-10-04' }], error: null }) };
+    const shareQuery = { select() { return this; }, eq: async () => ({ data: [], error: null }) };
+    const activityQuery = { select() { return this; }, neq() { return this; }, order() { return this; }, limit: async () => ({ data: [], error: null }) };
+    const client = {
+      from: vi.fn((table) => ({ friendships: friendshipQuery, habit_shares: shareQuery, social_activities: activityQuery })[table]),
+      rpc: vi.fn(async (name, args) => {
+        expect(name).toBe('social_relationship_profiles');
+        expect(args).toEqual({ profile_ids: ['friend'] });
+        return { data: [{ id: 'friend', handle: 'friend', display_name: 'Friend' }], error: null };
+      }),
+    };
+    const result = await loadSocialData(client, 'owner', { id: 'owner', handle: 'mine', display_name: 'Mine' });
+    expect(result.requests[0].person).toMatchObject({ id: 'friend', handle: 'friend' });
+    expect(client.from).not.toHaveBeenCalledWith('profiles');
+  });
 });

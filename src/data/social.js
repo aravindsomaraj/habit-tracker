@@ -10,11 +10,8 @@ export async function loadSocialData(client, userId, knownProfile) {
   if (friendshipResult.error) throw friendshipResult.error;
   const rows = friendshipResult.data || [];
   const ids = rows.map((row) => row.requester_id === userId ? row.addressee_id : row.requester_id);
-  const peopleResult = ids.length
-    ? await client.from('profiles').select(PROFILE_FIELDS).in('id', ids)
-    : { data: [], error: null };
-  if (peopleResult.error) throw peopleResult.error;
-  const people = Object.fromEntries((peopleResult.data || []).map((person) => [person.id, person]));
+  const peopleRows = await loadRelationshipProfiles(client, ids);
+  const people = Object.fromEntries(peopleRows.map((person) => [person.id, person]));
   const friends = rows.filter((row) => row.status === 'accepted').map((row) => {
     const person = people[row.requester_id === userId ? row.addressee_id : row.requester_id];
     return person && { ...person, friendship_id: row.id };
@@ -30,19 +27,20 @@ export async function loadSocialData(client, userId, knownProfile) {
     .neq('actor_id', userId).order('created_at', { ascending: false }).limit(50);
   if (feedResult.error) throw feedResult.error;
   const feedRows = feedResult.data || [];
-  const actorIds = [...new Set(feedRows.map((row) => row.actor_id))];
-  const actorsResult = actorIds.length
-    ? await client.from('profiles').select(PROFILE_FIELDS).in('id', actorIds)
-    : { data: [], error: null };
-  if (actorsResult.error) throw actorsResult.error;
-  const actors = Object.fromEntries((actorsResult.data || []).map((person) => [person.id, person]));
   return {
     profile,
     friends,
     requests,
     shares: sharesResult.data || [],
-    feed: feedRows.map((row) => ({ ...row, person: actors[row.actor_id] })).filter((row) => row.person),
+    feed: feedRows.map((row) => ({ ...row, person: people[row.actor_id] })).filter((row) => row.person),
   };
+}
+
+export async function loadRelationshipProfiles(client, ids) {
+  if (!ids.length) return [];
+  const { data, error } = await client.rpc('social_relationship_profiles', { profile_ids: [...new Set(ids)] });
+  if (error) throw error;
+  return data || [];
 }
 
 export async function loadOwnSettings(client) {

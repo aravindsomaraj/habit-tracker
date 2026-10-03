@@ -2,8 +2,8 @@
 
 The production baseline is the successfully applied `20261003_handle_onboarding.sql`
 (as confirmed by the owner). This work does not connect to or modify production.
-The new compatibility migration is local and must be reviewed/applied before the
-combined frontend is deployed.
+The compatibility and relationship-profile migrations are local and must be
+reviewed/applied before the combined frontend is deployed.
 
 ## Cause and access design
 
@@ -20,6 +20,9 @@ to Friends initialization through Promise.all.
   finding an accepted friendship, and describes profile edits as how accepted
   friends see you. `friend_social_profiles(uuid[])` preserves that audience and
   returns only UUID, handle, display name and bio. Requested UUIDs never grant access.
+- `social_relationship_profiles(uuid[])` returns only UUID, handle and display
+  name for pending or accepted counterparts, so sent requests survive a refresh
+  without widening direct profile access.
 - `own_profile_settings()` takes no target UUID and returns only the caller's
   identity, bio, discoverability and leaderboard opt-in.
 - `save_profile_settings(text,text,text,boolean,boolean)` updates only the
@@ -28,7 +31,7 @@ to Friends initialization through Promise.all.
   Existing handle trigger/constraints still enforce normalization and uniqueness.
 - Direct profile write grants are narrowed to the identity columns needed by
   `claim_handle`; settings use the owner RPC. Self-only profile RLS is retained.
-- The four compatibility RPCs are SECURITY DEFINER because otherwise the caller
+- The profile and leaderboard RPCs are SECURITY DEFINER because otherwise the caller
   would need raw SELECT grants on private settings. Each has `search_path = ''`,
   qualified relations, a caller-scoped audience and fixed output columns. PUBLIC
   and anon execution is revoked; only authenticated clients are granted execution.
@@ -78,7 +81,7 @@ It also explicitly revokes activity INSERT, UPDATE and DELETE from PUBLIC, anon
 and authenticated. Prior supported schemas did not grant UPDATE, but the migration
 now removes it explicitly even if previously granted. SELECT and RLS are unchanged.
 
-All nine SECURITY DEFINER functions were reviewed. Each uses `search_path = ''`
+All ten SECURITY DEFINER functions were reviewed. Each uses `search_path = ''`
 and schema-qualified relations; built-in functions resolve through pg_catalog.
 
 | Function | Authorization and output | Client EXECUTE |
@@ -91,9 +94,10 @@ and schema-qualified relations; built-in functions resolve through pg_catalog.
 | `own_profile_settings()` | No target ID; only auth.uid() identity/bio/two settings | authenticated only |
 | `save_profile_settings(text,text,text,boolean,boolean)` | No target ID; only auth.uid() handled profile; returns same fixed owner fields | authenticated only |
 | `friend_social_profiles(uuid[])` | IDs filter only self/accepted friends; identity and bio only | authenticated only |
+| `social_relationship_profiles(uuid[])` | IDs filter only pending/accepted counterparts; directory identity only | authenticated only |
 | `social_leaderboard_week(date)` | Requires auth.uid(); opt-in accepted circle, viewer-specific sharing and actual qualifying entries; six leaderboard fields only | authenticated only |
 
-All seven callable definers explicitly revoke PUBLIC/anon and grant authenticated.
+All eight callable definers explicitly revoke PUBLIC/anon and grant authenticated.
 NULL auth.uid() cannot authorize reads/mutations; controls return an unavailable
 error without changing anything. Trigger authorization comes from the original
 RLS-checked writes or authorized RPCs; clients cannot call the triggers directly.
@@ -161,9 +165,10 @@ For the current production project:
 
 1. Leave all applied migrations unchanged. Do not rerun the old social/profile or
    handle migration. The old social/profile script assumes pre-handle policies.
-2. Review and apply **only**
-   `migrations/20261003_handle_social_compatibility.sql` as postgres in SQL Editor.
-   It is transactional. If it fails, stop and roll back the editor transaction.
+2. Review and apply `migrations/20261003_handle_social_compatibility.sql`, then
+   `migrations/20261004_fix_social_relationship_profiles.sql`, as postgres in SQL
+   Editor. Both are transactional. If either fails, stop and roll back the editor
+   transaction.
 3. Run `checks/20261003_handle_onboarding.sql`. All 13 read-only checks must pass.
 4. Review and run `checks/20261003_handle_social_compatibility.sql`. Unlike the
    first check, this script creates synthetic users/data within a transaction,

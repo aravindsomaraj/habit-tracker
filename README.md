@@ -159,7 +159,8 @@ permanently removes the conversation and its messages.
 
 The production handle migration is already applied. Before deploying the combined
 frontend, review and apply the new
-`database/migrations/20261003_handle_social_compatibility.sql`, then run both
+`database/migrations/20261003_handle_social_compatibility.sql` followed by
+`database/migrations/20261004_fix_social_relationship_profiles.sql`, then run both
 verification scripts listed in [the compatibility guide](database/SOCIAL_COMPATIBILITY.md).
 Do not rerun the historical `20261003_social_profiles.sql` after handle onboarding.
 The forward migration retains friend-visible bios, private owner settings,

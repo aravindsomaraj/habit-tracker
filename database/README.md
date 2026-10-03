@@ -11,9 +11,10 @@ order to a new project:
 5. `20260922_add_direct_chat.sql`
 6. `20261003_handle_onboarding.sql`
 7. `20261003_handle_social_compatibility.sql`
+8. `20261004_fix_social_relationship_profiles.sql`
 
 For the current production project, handle onboarding is already applied. Apply
-only the new compatibility migration next; do not run the historical
+the compatibility migration and then the relationship-profile fix; do not run the historical
 `20261003_social_profiles.sql` after onboarding. The compatibility migration
 supports either historical path and installs missing Social support itself.
 See [the compatibility guide](SOCIAL_COMPATIBILITY.md) for the access design,
