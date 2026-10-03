@@ -36,12 +36,12 @@ describe('view smoke coverage', () => {
     }
   });
 
-  it('renders the Friends profile setup and populated feed states', () => {
-    const base = { status: 'ready', error: '', message: '', requests: [], shares: [], leaderboard: [], receivedCount: 0, createProfile: vi.fn(), sendRequest: vi.fn(), updateFriendship: vi.fn(), openChat: vi.fn() };
+  it('renders missing-identity guidance and the populated activity feed', () => {
+    const base = { status: 'ready', error: '', message: '', requests: [], shares: [], leaderboard: [], receivedCount: 0, sendRequest: vi.fn(), updateFriendship: vi.fn(), openChat: vi.fn() };
     const setup = render(<MemoryRouter><SocialView habits={[habit]} social={{ ...base, profile: null, friends: [], feed: [] }} onOpenSharing={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText('Build habits with people you trust')).toBeTruthy();
     setup.unmount();
-    render(<MemoryRouter><SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner', leaderboard_enabled: false }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', actor_id: 'friend', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} /></MemoryRouter>);
+    render(<MemoryRouter><SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner', handle: 'owner', leaderboard_enabled: false }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', actor_id: 'friend', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText('Friend activity')).toBeTruthy();
     expect(screen.getByText('Alex')).toBeTruthy();
   });

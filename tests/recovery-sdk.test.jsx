@@ -2,6 +2,7 @@ import React, { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/app/App.jsx';
+import { profileResponse } from './profileFixture.js';
 import { getSupabaseClient, resetSupabaseClientForTests } from '../src/data/supabase.js';
 import { RECOVERY_SUCCESS } from '../src/auth/recovery.js';
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   window.APP_CONFIG = { SUPABASE_URL: 'https://project.example', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test' };
   http = vi.fn(async (input, options = {}) => {
     const url = new URL(input);
+    if (url.pathname === '/rest/v1/profiles') return profileResponse(url);
     if (url.pathname === '/auth/v1/user') return new Response(JSON.stringify({ id: 'recovered', email: 'recovered@example.com' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     if (url.pathname === '/auth/v1/logout' && options.method === 'POST') return new Response(null, { status: 204 });
     throw new Error(`Unexpected test request: ${url.pathname}`);
@@ -58,6 +60,7 @@ describe('real Supabase callback lifecycle', () => {
     render(<StrictMode><App /></StrictMode>);
     expect(await screen.findByLabelText('New password')).toBeTruthy();
     expect(tracker.render).not.toHaveBeenCalled();
+    expect(http.mock.calls.some(([url]) => new URL(url).pathname.startsWith('/rest/'))).toBe(false);
     expect((await getSupabaseClient().auth.getSession()).data.session.user.id).toBe('recovered');
     expect(window.location.hash).toBe('');
     expect(window.location.search).toBe('?recovery=1');
@@ -67,6 +70,7 @@ describe('real Supabase callback lifecycle', () => {
     expect(await screen.findByText(RECOVERY_SUCCESS)).toBeTruthy();
     expect(screen.getByText('Welcome back')).toBeTruthy();
     expect(tracker.render).not.toHaveBeenCalled();
+    expect(http.mock.calls.some(([url]) => new URL(url).pathname.startsWith('/rest/'))).toBe(false);
     expect((await getSupabaseClient().auth.getSession()).data.session).toBeNull();
     const writes = http.mock.calls.filter(([, options]) => options?.method === 'PUT' || options?.method === 'POST');
     expect(writes.map(([url]) => new URL(url).pathname)).toEqual(['/auth/v1/user', '/auth/v1/logout']);
@@ -119,6 +123,31 @@ describe('Google returns through the real Supabase SDK', () => {
     return params.toString();
   }
 
+  it('onboards a new Google callback through the real profile and claim HTTP contracts', async () => {
+    const originalHttp = http.getMockImplementation();
+    http.mockImplementation(async (input, options = {}) => {
+      const path = new URL(input).pathname;
+      const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (path === '/rest/v1/profiles') return json(null);
+      if (path === '/rest/v1/rpc/handle_available') return json(true);
+      if (path === '/rest/v1/rpc/claim_handle') {
+        expect(JSON.parse(options.body)).toEqual({ candidate: 'chosen_google' });
+        return json([{ id: 'recovered', handle: 'chosen_google', display_name: 'chosen_google' }]);
+      }
+      return originalHttp(input, options);
+    });
+    window.history.replaceState({}, '', `/?oauth=google#${googleCallback()}`);
+    render(<StrictMode><App /></StrictMode>);
+    expect((await screen.findByLabelText('Handle')).value).toBe('recovered');
+    expect(tracker.render).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'Chosen_Google' } });
+    await screen.findByText('✓ @chosen_google is available');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Tracker for recovered')).toBeTruthy();
+    expect(http.mock.calls.filter(([url]) => new URL(url).pathname === '/rest/v1/profiles')).toHaveLength(1);
+    expect(http.mock.calls.filter(([url]) => new URL(url).pathname === '/rest/v1/rpc/claim_handle')).toHaveLength(1);
+  });
+
   it.each([false, true])('accepts a Google callback, restores it, and uses normal logout (previous account: %s)', async (previousLogin) => {
     if (previousLogin) localStorage.setItem(storageKey, JSON.stringify(storedSession('previous')));
     const credentials = googleCallback();
@@ -169,6 +198,7 @@ describe('Google returns through the real Supabase SDK', () => {
     expect(window.location.search + window.location.hash).toBe('');
     // An explicit password retry still uses the normal central listener.
     http.mockImplementation(async (input) => {
+      if (new URL(input).pathname === '/rest/v1/profiles') return profileResponse(new URL(input));
       expect(new URL(input).pathname).toBe('/auth/v1/token');
       return new Response(JSON.stringify(storedSession('password-retry')), { status: 200, headers: { 'Content-Type': 'application/json' } });
     });

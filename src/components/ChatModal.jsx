@@ -11,10 +11,10 @@ export function ChatModal({ client, profile, chat, onClose, onRead }) {
   const box = useRef(null);
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    setLoading(true); setMessages([]); setError('');
     loadMessages(client, chat.conversationId).then((rows) => {
       if (active) {
-        setMessages(rows); setLoading(false);
+        setMessages((current) => rows.reduce(mergeMessage, [...current]).sort((a, b) => a.created_at.localeCompare(b.created_at))); setLoading(false);
         const latest = rows.at(-1);
         if (latest && document.visibilityState !== 'hidden') onRead(chat.conversationId, latest.created_at);
       }

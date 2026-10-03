@@ -1,9 +1,9 @@
-export async function loadSocialData(client, userId) {
-  const profileFields = 'id,handle,display_name,bio,discoverable,leaderboard_enabled';
-  const profileResult = await client.from('profiles').select(profileFields).eq('id', userId).maybeSingle();
-  if (profileResult.error) throw profileResult.error;
-  const profile = profileResult.data || null;
-  if (!profile) return { profile: null, friends: [], requests: [], shares: [], feed: [] };
+import { loadProfile, PROFILE_FIELDS } from './profiles.js';
+import { handleError, normalizeHandle } from '../lib/handles.js';
+
+export async function loadSocialData(client, userId, knownProfile) {
+  const profile = knownProfile === undefined ? await loadProfile(client, userId) : knownProfile;
+  if (!profile?.handle) return { profile, friends: [], requests: [], shares: [], feed: [] };
 
   const friendshipResult = await client.from('friendships').select('id,requester_id,addressee_id,status,created_at')
     .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).order('created_at', { ascending: false });
@@ -11,7 +11,7 @@ export async function loadSocialData(client, userId) {
   const rows = friendshipResult.data || [];
   const ids = rows.map((row) => row.requester_id === userId ? row.addressee_id : row.requester_id);
   const peopleResult = ids.length
-    ? await client.from('profiles').select(profileFields).in('id', ids)
+    ? await client.from('profiles').select(PROFILE_FIELDS).in('id', ids)
     : { data: [], error: null };
   if (peopleResult.error) throw peopleResult.error;
   const people = Object.fromEntries((peopleResult.data || []).map((person) => [person.id, person]));
@@ -32,7 +32,7 @@ export async function loadSocialData(client, userId) {
   const feedRows = feedResult.data || [];
   const actorIds = [...new Set(feedRows.map((row) => row.actor_id))];
   const actorsResult = actorIds.length
-    ? await client.from('profiles').select(profileFields).in('id', actorIds)
+    ? await client.from('profiles').select(PROFILE_FIELDS).in('id', actorIds)
     : { data: [], error: null };
   if (actorsResult.error) throw actorsResult.error;
   const actors = Object.fromEntries((actorsResult.data || []).map((person) => [person.id, person]));
@@ -45,17 +45,31 @@ export async function loadSocialData(client, userId) {
   };
 }
 
-export async function saveProfile(client, userId, profile) {
-  const result = await client.from('profiles').upsert({
-    id: userId,
-    display_name: profile.displayName,
-    handle: profile.handle,
-    bio: profile.bio || '',
-    discoverable: profile.discoverable,
-    leaderboard_enabled: profile.leaderboardEnabled,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'id' });
-  if (result.error) throw result.error;
+export async function loadOwnSettings(client) {
+  const { data, error } = await client.rpc('own_profile_settings');
+  if (error) throw error;
+  if (!data?.[0]) throw new Error('Your profile settings are unavailable.');
+  return data[0];
+}
+
+export async function loadFriendProfiles(client, ids) {
+  if (!ids.length) return [];
+  const { data, error } = await client.rpc('friend_social_profiles', { profile_ids: ids });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveProfile(client, profile) {
+  const { data, error } = await client.rpc('save_profile_settings', {
+    new_display_name: profile.displayName,
+    new_handle: normalizeHandle(profile.handle),
+    new_bio: profile.bio || '',
+    new_discoverable: profile.discoverable,
+    new_leaderboard_enabled: profile.leaderboardEnabled,
+  });
+  if (error) throw error;
+  if (!data?.[0]) throw new Error('Your profile could not be saved.');
+  return data[0];
 }
 
 export async function loadLeaderboard(client, weekStart) {
@@ -76,7 +90,13 @@ export async function markChatRead(client, conversationId, throughTime) {
 }
 
 export async function requestFriend(client, profile, handle) {
-  const found = await client.from('profiles').select('id,handle').eq('handle', handle).maybeSingle();
+  if (!profile?.handle) throw new Error('Choose your handle before adding friends.');
+  const candidate = normalizeHandle(handle);
+  // Existing reserved handles remain searchable.
+  const validation = handleError(candidate, { allowReserved: true });
+  if (validation) throw new Error(validation);
+  if (candidate === profile.handle) throw new Error('You cannot add yourself.');
+  const found = await client.from('profiles').select(PROFILE_FIELDS).eq('handle', candidate).maybeSingle();
   if (found.error) throw found.error;
   if (!found.data) throw new Error('No discoverable profile has that handle.');
   if (found.data.id === profile.id) throw new Error('You cannot add yourself.');

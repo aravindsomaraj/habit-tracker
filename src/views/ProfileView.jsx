@@ -10,8 +10,11 @@ function Avatar({ profile, large = false }) {
 }
 
 export function ProfileView({ social, user, habits, entries, profileId }) {
-  if (social.status === 'loading') return <div className="card"><p className="sub">Loading profile…</p></div>;
-  if (social.status === 'error') return <div className="card"><h2>Profile is unavailable</h2><p className="sub">{social.error}</p></div>;
+  const own = !profileId || profileId === social.profile?.id;
+  if (own && social.profileStatus === 'loading') return <div className="card"><p className="sub">Loading profile settings…</p></div>;
+  if (own && social.profileStatus === 'error') return <div className="card"><h2>Profile settings unavailable</h2><p role="alert">{social.profileError}</p><button className="pillbtn" onClick={social.refreshProfile}>Try again</button></div>;
+  if (!own && social.status === 'loading') return <div className="card"><p className="sub">Loading profile…</p></div>;
+  if (!own && social.status === 'error') return <div className="card"><h2>Profile is unavailable</h2><p className="sub">{social.error}</p></div>;
 
   if (profileId && profileId !== social.profile?.id) {
     const friend = social.friends.find((item) => item.id === profileId);
@@ -20,6 +23,7 @@ export function ProfileView({ social, user, habits, entries, profileId }) {
     const recent = social.feed.filter((item) => item.actor_id === friend.id).slice(0, 5);
     return <>
       <section className="card profile-hero"><Avatar profile={friend} large /><div><h2>{friend.display_name}</h2><p className="sub">@{friend.handle}</p></div></section>
+      {social.friendProfilesError && <p role="alert">{social.friendProfilesError}</p>}
       {friend.bio && <section className="card"><h2>About</h2><p>{friend.bio}</p></section>}
       <section className="card"><h2>Shared with you</h2><div className="profile-stats"><div><b>{score?.rank ? `#${score.rank}` : '—'}</b><span>weekly rank</span></div><div><b>{score?.completion_count || 0}</b><span>completions</span></div><div><b>{score?.active_days || 0}</b><span>active days</span></div></div><button className="cta" onClick={() => social.openChat(friend)}>Message {friend.display_name}</button></section>
       <section className="card"><h2>Recent activity</h2>{recent.length ? <div className="social-feed">{recent.map((item) => <div key={item.id}><span className="social-avatar">✓</span><p>Completed <b>{item.habit_label}</b><small>{item.occurred_on}</small></p></div>)}</div> : <p className="sub">No completion activity is currently shared with you.</p>}</section>

@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './tests/setup.js',
+    // Leave CPU/memory headroom for the embedded PostgreSQL security tests.
+    maxWorkers: 2,
   },
 });

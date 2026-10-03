@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { normalizeHandle } from '../lib/handles.js';
 import { Link, NavLink } from 'react-router';
 import { weekStartKey } from '../hooks/useSocial.js';
 
@@ -10,11 +11,12 @@ const socialTabs = [
 ];
 
 export function SocialView({ social, habits, section = 'activity', onOpenSharing }) {
-  if (social.status === 'loading') return <div className="card"><p className="sub">Loading your social circle…</p></div>;
-  if (social.status === 'error') return <div className="card"><h2>Social is not set up yet</h2><p className="sub">{social.error}</p></div>;
-  if (!social.profile) return <div className="card social-welcome"><span className="social-welcome-icon">👋</span><h2>Build habits with people you trust</h2><p className="sub">Create a profile to add friends, share selected completions, chat, and join the weekly leaderboard.</p><Link className="cta" to="/profile">Create my profile</Link></div>;
+  if (section !== 'leaderboard' && social.status === 'loading') return <div className="card"><p className="sub">Loading your social circle…</p></div>;
+  if (section !== 'leaderboard' && social.status === 'error') return <div className="card"><h2>Social is not set up yet</h2><p className="sub">{social.error}</p></div>;
+  if (!social.profile?.handle) return <div className="card social-welcome"><span className="social-welcome-icon">👋</span><h2>Build habits with people you trust</h2><p className="sub">Reload to choose your handle before using Social.</p></div>;
   return <>
     <nav className="social-tabs" aria-label="Social sections">{socialTabs.map(([path, label]) => <NavLink key={path} to={path} className={({ isActive }) => isActive ? 'on' : ''}>{label}{label === 'Friends' && social.receivedCount > 0 && <span className="tab-badge">{social.receivedCount}</span>}</NavLink>)}</nav>
+    {social.unreadError && <p className="banner" role="status">Unread counts are unavailable. You can still open chats.</p>}
     {social.message && <p className="banner" role="status">{social.message}</p>}
     {section === 'leaderboard' ? <Leaderboard social={social} /> : section === 'friends' ? <Friends social={social} habits={habits} onOpenSharing={onOpenSharing} /> : <Activity social={social} />}
   </>;
@@ -23,7 +25,7 @@ export function SocialView({ social, habits, section = 'activity', onOpenSharing
 function Activity({ social }) {
   const mine = (social.leaderboard || []).find((row) => row.user_id === social.profile.id);
   return <>
-    <section className="social-hero"><span className="eyebrow">YOUR CIRCLE THIS WEEK</span><h2>{mine ? `You’re #${mine.rank}` : 'Show up together'}</h2><p>{mine ? `${mine.completion_count} shared completion${Number(mine.completion_count) === 1 ? '' : 's'} across ${mine.active_days} active day${Number(mine.active_days) === 1 ? '' : 's'}.` : social.profile.leaderboard_enabled ? 'Share a completion to enter this week’s ranking.' : 'Turn on leaderboard participation in Profile when you’re ready.'}</p><Link className="cta" to="/social/leaderboard">View leaderboard</Link></section>
+    <section className="social-hero"><span className="eyebrow">YOUR CIRCLE THIS WEEK</span><h2>{mine ? `You’re #${mine.rank}` : 'Show up together'}</h2><p>{mine ? `${mine.completion_count} shared completion${Number(mine.completion_count) === 1 ? '' : 's'} across ${mine.active_days} active day${Number(mine.active_days) === 1 ? '' : 's'}.` : social.profileStatus === 'error' ? 'Profile settings are temporarily unavailable.' : social.profile.leaderboard_enabled ? 'Share a completion to enter this week’s ranking.' : 'Turn on leaderboard participation in Profile when you’re ready.'}</p><Link className="cta" to="/social/leaderboard">View leaderboard</Link></section>
     <section className="card"><div className="section-heading"><div><h2>Friend activity</h2><p className="sub">Progress your friends chose to share with you.</p></div><Link className="text-link" to="/social/friends">Friends</Link></div>{!social.feed.length ? <div className="empty"><div className="big">🌱</div><p>No shared completions yet.</p><Link className="pillbtn" to="/social/friends">Add a friend</Link></div> : <div className="social-feed">{social.feed.map((item) => <div key={item.id}><span className="social-avatar">✓</span><p><Link to={`/profile/${item.actor_id}`}><b>{item.person.display_name}</b></Link> completed <b>{item.habit_label}</b><small>{item.occurred_on}</small></p></div>)}</div>}</section>
   </>;
 }
@@ -47,14 +49,14 @@ function Friends({ social, habits, onOpenSharing }) {
   const sent = social.requests.filter((row) => row.requester_id === social.profile.id);
   function request(event) {
     event.preventDefault();
-    const clean = handle.trim().toLowerCase().replace(/^@/, '');
+    const clean = normalizeHandle(handle);
     if (clean) social.sendRequest(clean).then((ok) => { if (ok) setHandle(''); });
   }
   return <>
-    <section className="card"><h2>Grow your circle</h2><p className="sub">Invite someone by their exact handle. They must accept before sharing or chat begins.</p><form className="social-invite" onSubmit={request}><input aria-label="Friend handle" maxLength="24" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta">Send request</button></form></section>
-    {!!received.length && <section className="card request-card"><h2>Requests for you</h2><div className="social-list">{received.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><span className="social-actions"><button className="pillbtn" onClick={() => social.updateFriendship('accept', row.id)}>Accept</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? They cannot send another request.')) social.updateFriendship('block', row.id); }}>Block</button></span></div>)}</div></section>}
-    <section className="card"><h2>Friends</h2>{!social.friends.length ? <p className="sub">No accepted friends yet.</p> : <div className="social-list">{social.friends.map((friend) => <div key={friend.id}><Link className="friend-name" to={`/profile/${friend.id}`}><b>{friend.display_name}</b><span>@{friend.handle}</span></Link><span className="social-actions"><button className="pillbtn" onClick={() => social.openChat(friend)}>Message</button><button className="pillbtn" onClick={() => { if (window.confirm('Remove this connection? All sharing and chat between you will be removed.')) social.updateFriendship('remove', friend.friendship_id); }}>Remove</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? All sharing and chat between you will be removed.')) social.updateFriendship('block', friend.friendship_id); }}>Block</button></span></div>)}</div>}
-      {!!sent.length && <><h3 className="social-heading">Sent requests</h3><div className="social-list">{sent.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><button className="pillbtn" onClick={() => social.updateFriendship('remove', row.id)}>Cancel</button></div>)}</div></>}
+    <section className="card"><h2>Grow your circle</h2><p className="social-identity">@{social.profile.handle}</p><p className="sub">Invite someone by their exact handle. They must accept before sharing or chat begins.</p><form className="social-invite" onSubmit={request}><input aria-label="Friend handle" maxLength="25" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta">Send request</button></form></section>
+    {!!received.length && <section className="card request-card"><h2>Requests for you</h2><div className="social-list">{received.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>{row.person.handle ? `@${row.person.handle}` : 'Handle not chosen'}</span><span className="social-actions"><button className="pillbtn" onClick={() => social.updateFriendship('accept', row.id)}>Accept</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? They cannot send another request.')) social.updateFriendship('block', row.id); }}>Block</button></span></div>)}</div></section>}
+    <section className="card"><h2>Friends</h2>{!social.friends.length ? <p className="sub">No accepted friends yet.</p> : <div className="social-list">{social.friends.map((friend) => <div key={friend.id}><Link className="friend-name" to={`/profile/${friend.id}`}><b>{friend.display_name}</b><span>{friend.handle ? `@${friend.handle}` : 'Handle not chosen'}</span></Link><span className="social-actions"><button className="pillbtn" onClick={() => social.openChat(friend)}>Message</button><button className="pillbtn" onClick={() => { if (window.confirm('Remove this connection? All sharing and chat between you will be removed.')) social.updateFriendship('remove', friend.friendship_id); }}>Remove</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? All sharing and chat between you will be removed.')) social.updateFriendship('block', friend.friendship_id); }}>Block</button></span></div>)}</div>}
+      {!!sent.length && <><h3 className="social-heading">Sent requests</h3><div className="social-list">{sent.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>{row.person.handle ? `@${row.person.handle}` : 'Handle not chosen'}</span><button className="pillbtn" onClick={() => social.updateFriendship('remove', row.id)}>Cancel</button></div>)}</div></>}
     </section>
     <section className="card"><h2>Sharing</h2><p className="sub">Choose which friends see completion events for each habit. Values, missed days, notes, and photos stay private.</p><p className="social-summary">{social.shares.length} active share{social.shares.length === 1 ? '' : 's'}</p>{habits.length ? <button className="pillbtn" onClick={onOpenSharing}>Manage sharing</button> : <p className="tiny">Create a habit first to share progress.</p>}</section>
   </>;

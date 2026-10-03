@@ -38,7 +38,7 @@ function routeFromPath(pathname) {
   return null;
 }
 
-export function TrackerApp({ auth }) {
+export function TrackerApp({ auth, profile }) {
   const userId = auth.session.user.id;
   const store = useHabits(auth.client, userId);
   const location = useLocation(), navigate = useNavigate();
@@ -50,7 +50,7 @@ export function TrackerApp({ auth }) {
   const [modal, setModal] = useState(null), [toast, setToast] = useState(''), [burst, setBurst] = useState(0);
   const showToast = useCallback((text) => setToast(text), []);
   const clearToast = useCallback(() => setToast(''), []);
-  const social = useSocial(auth.client, userId, showToast);
+  const social = useSocial(auth.client, userId, showToast, profile);
 
   useEffect(() => {
     if (!store.habits.length) { setSelected(null); return; }
@@ -145,12 +145,12 @@ export function TrackerApp({ auth }) {
 
   const dayEntry = modal?.type === 'day' ? entryOf(store.entries, modal.habit, modal.entryDate) || {} : null;
   return <>
-    <AppShell view={view} links={{ today: '/today', progress: habitPath('progress'), calendar: habitPath('calendar'), social: '/social/activity', manage: '/habits', profile: '/profile' }} socialCount={social.unreadCount + social.receivedCount} profile={social.profile} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
+    <AppShell view={view} links={{ today: '/today', progress: habitPath('progress'), calendar: habitPath('calendar'), social: '/social/activity', manage: '/habits', profile: '/profile' }} socialCount={social.unreadCount + social.receivedCount} profile={social.profile || profile} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
       <Banner>{auth.accountMessage}</Banner><Banner>{store.message}</Banner>
       <main id="main-content" tabIndex={-1} aria-busy={store.busy || store.status === 'loading'} inert={store.busy || store.status === 'loading'}>{content}</main>
     </AppShell>
     {(modal || social.chat) && <Modal onClose={closeModal} busy={store.busy}><Banner>{store.message}</Banner>
-      {social.chat ? <ChatModal client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} onRead={social.markConversationRead} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`, { viewTransition: true }); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
+      {social.chat ? <ChatModal key={social.chat.conversationId} client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} onRead={social.markConversationRead} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`, { viewTransition: true }); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
     </Modal>}
     <Toast message={toast} onDone={clearToast} /><Confetti burst={burst} />
   </>;

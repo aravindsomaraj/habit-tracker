@@ -32,13 +32,29 @@ function LocationControls() {
   return <><output data-testid="path">{location.pathname}</output><button onClick={() => navigate(-1)}>Back</button><button onClick={() => navigate(1)}>Forward</button></>;
 }
 
-function openAt(path) {
-  return render(<MemoryRouter initialEntries={[path]}><TrackerApp auth={{ session: { user: { id: 'owner' } }, client: {}, logout: vi.fn(), accountMessage: '', busy: false }} /><LocationControls /></MemoryRouter>);
+function openAt(path, profile) {
+  return render(<MemoryRouter initialEntries={[path]}><TrackerApp profile={profile} auth={{ session: { user: { id: 'owner' } }, client: {}, logout: vi.fn(), accountMessage: '', busy: false }} /><LocationControls /></MemoryRouter>);
 }
 
 afterEach(cleanup);
 
 describe('tracker routes', () => {
+  it('integrates the confirmed handle with the new account footer and floating navigation', () => {
+    openAt('/today', { id: 'owner', handle: 'habit_friend', display_name: 'Habit Friend' });
+    const identity = screen.getByRole('link', { name: 'Your handle: @habit_friend' });
+    expect(identity.closest('footer').className).toBe('account-controls');
+    expect(screen.getByRole('navigation', { name: 'Main navigation' }).className).toBe('floating-nav');
+    expect(screen.getByRole('button', { name: 'New habit' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Switch theme' })).toBeTruthy();
+    fireEvent.click(identity);
+    expect(screen.getByTestId('path').textContent).toBe('/profile');
+    expect(screen.getByTestId('view').textContent).toBe('Profile me');
+    const more = screen.getByRole('link', { name: 'More — Habits' });
+    expect(screen.getByRole('link', { name: 'Social' }).className).toBe('on');
+    fireEvent.click(more);
+    expect(screen.getByTestId('view').textContent).toBe('Habits');
+  });
+
   it('opens a habit deep link and preserves its habit across tabs and browser history', async () => {
     openAt('/progress/reading');
     expect(screen.getByTestId('view').textContent).toBe('Progress Reading');

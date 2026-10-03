@@ -17,7 +17,7 @@ export function AppShell({ view, links, socialCount, profile, busy, authBusy, on
     <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <header className="app-top"><button className="round-button" onClick={onTheme} aria-label="Switch theme">◐</button><div><h1>{title}</h1><time dateTime={now.toLocaleDateString('en-CA')}>Today {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</time></div><div className="top-actions"><button className="round-button new-habit" disabled={busy} onClick={onNew} aria-label="New habit">+</button><Link className="round-button profile-button" to={links.profile} aria-label="Open profile">{avatar}</Link></div></header>
     <div className="route-stage" key={view}>{children}</div>
-    <footer className="account-controls"><Link to={links.profile}>Profile</Link><button disabled={authBusy} onClick={onLogout}>Log out ↗</button></footer>
+    <footer className="account-controls">{profile?.handle && <Link to={links.profile} className="account-handle" aria-label={`Your handle: @${profile.handle}`}>@{profile.handle}</Link>}<Link to={links.profile}>Profile</Link><button disabled={authBusy} onClick={onLogout}>Log out ↗</button></footer>
     <nav className="floating-nav" aria-label="Main navigation">{sections.map(([key, label, path]) => {
       const active = view === key || key === 'progress' && ['graph', 'proof'].includes(view) || key === 'social' && view === 'profile';
       return <NavLink key={key} to={links[key]} viewTransition aria-label={label === 'More' ? 'More — Habits' : label} className={active ? 'on' : ''}>

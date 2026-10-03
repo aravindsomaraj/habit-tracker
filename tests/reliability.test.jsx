@@ -202,12 +202,14 @@ describe('social privacy', () => {
     expect(rows[0].completion_count).toBe(3);
   });
 
-  it('saves only supported public profile settings', async () => {
-    let payload;
-    const client = { from: () => ({ upsert: async (row) => { payload = row; return { error: null }; } }) };
-    await saveProfile(client, 'owner', { displayName: 'Madhav', handle: 'madhav', bio: 'Reading daily', discoverable: false, leaderboardEnabled: true, email: 'private@example.com' });
-    expect(payload).toMatchObject({ id: 'owner', display_name: 'Madhav', handle: 'madhav', bio: 'Reading daily', discoverable: false, leaderboard_enabled: true });
-    expect(payload).not.toHaveProperty('email');
+  it('saves only permitted owner profile fields through the authenticated RPC', async () => {
+    const rpc = vi.fn(async () => ({ data: [{ id: 'owner', handle: 'madhav' }], error: null }));
+    await saveProfile({ rpc }, { displayName: 'Madhav', handle: 'madhav', bio: 'Reading daily', discoverable: false, leaderboardEnabled: true, email: 'private@example.com', id: 'forged-owner' });
+    expect(rpc).toHaveBeenCalledWith('save_profile_settings', {
+      new_display_name: 'Madhav', new_handle: 'madhav', new_bio: 'Reading daily', new_discoverable: false, new_leaderboard_enabled: true,
+    });
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('email');
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('id');
   });
 });
 
