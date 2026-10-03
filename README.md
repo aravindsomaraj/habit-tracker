@@ -17,7 +17,7 @@ src/
   data/                    Supabase database, Storage, social, and client adapters
   hooks/                   Habit and social state/lifecycle hooks
   lib/                     Habit calculations, dates, streaks, points, and templates
-  views/                   Today, Progress, Calendar, Graph, Proof, Friends, Habits
+  views/                   Today, Progress, Calendar, Graph, Proof, Social, Profile, Habits
 tests/                     Vitest/jsdom regression checks with mocked services
 server/                    Future authenticated API (see README)
 database/
@@ -28,7 +28,8 @@ database/
 The frontend uses React functional components and hooks, bundled by Vite. It is
 a client-only single-page application with hash-based routing, so GitHub Pages
 can serve every view from `/` without server rewrites. The main routes are
-`/#/today`, `/#/friends`, and `/#/habits`; Progress, Calendar, Graph, and Proof
+`/#/today`, `/#/social/activity`, `/#/profile`, and `/#/habits`; Progress,
+Calendar, Graph, and Proof
 use `/#/<view>/<habit-id>`. These links can be bookmarked or shared, and browser
 Back/Forward restores the selected view and habit. Unknown routes return to
 Today; a deleted or invalid habit ID selects the first available habit. Modals
@@ -154,6 +155,18 @@ Apply `database/migrations/20260922_add_direct_chat.sql` after those migrations
 to enable private one-to-one text chat and live message delivery. Only accepted
 friends can create, read, or send messages; removing or blocking a friend also
 permanently removes the conversation and its messages.
+
+Apply `database/migrations/20261003_social_profiles.sql` last, before deploying
+the current frontend. It adds editable profile bios, opt-in friends-only weekly
+leaderboards, server-maintained completion activity, persistent unread chat
+positions, and relationship cleanup for direct database deletes. Leaderboard
+scores include only completion events that the viewer is already allowed to see;
+habit values, missed days, notes, photos, and unshared habits are never returned.
+
+Social is a primary navigation destination with Activity, Leaderboard, Friends,
+and Profile sections. The old `/#/friends` URL redirects to `/#/social/friends`.
+Graph and Proof remain bookmarkable at their existing URLs and are grouped under
+Progress in the primary navigation.
 
 ## Private proof photos
 

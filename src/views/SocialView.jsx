@@ -1,36 +1,68 @@
 import { useState } from 'react';
+import { Link, NavLink } from 'react-router';
+import { weekStartKey } from '../hooks/useSocial.js';
 
-export function SocialView({ social, habits, onOpenSharing }) {
-  if (social.status === 'loading') return <div className="card"><p className="sub">Loading your accountability circle…</p></div>;
-  if (social.status === 'error') return <div className="card"><h2>Friends are not set up yet</h2><p className="sub">{social.error}</p></div>;
-  if (!social.profile) return <ProfileSetup onSave={social.createProfile} />;
-  const received = social.requests.filter((row) => row.addressee_id === social.profile.id);
-  const sent = social.requests.filter((row) => row.requester_id === social.profile.id);
+const socialTabs = [
+  ['/social/activity', 'Activity'],
+  ['/social/leaderboard', 'Leaderboard'],
+  ['/social/friends', 'Friends'],
+  ['/profile', 'Profile'],
+];
+
+export function SocialView({ social, habits, section = 'activity', onOpenSharing }) {
+  if (social.status === 'loading') return <div className="card"><p className="sub">Loading your social circle…</p></div>;
+  if (social.status === 'error') return <div className="card"><h2>Social is not set up yet</h2><p className="sub">{social.error}</p></div>;
+  if (!social.profile) return <div className="card social-welcome"><span className="social-welcome-icon">👋</span><h2>Build habits with people you trust</h2><p className="sub">Create a profile to add friends, share selected completions, chat, and join the weekly leaderboard.</p><Link className="cta" to="/profile">Create my profile</Link></div>;
   return <>
+    <nav className="social-tabs" aria-label="Social sections">{socialTabs.map(([path, label]) => <NavLink key={path} to={path} className={({ isActive }) => isActive ? 'on' : ''}>{label}{label === 'Friends' && social.receivedCount > 0 && <span className="tab-badge">{social.receivedCount}</span>}</NavLink>)}</nav>
     {social.message && <p className="banner" role="status">{social.message}</p>}
-    <FriendInvite onSend={social.sendRequest} />
-    <div className="grid two"><div className="card"><h2>Friends</h2>
-      {!social.friends.length ? <p className="sub">No accepted friends yet.</p> : <div className="social-list">{social.friends.map((friend) => <div key={friend.id}><b>{friend.display_name}</b><span>@{friend.handle}</span><span className="social-actions"><button className="pillbtn" onClick={() => social.openChat(friend)}>Message</button><button className="pillbtn" onClick={() => { if (window.confirm('Remove this connection? All sharing between you will also be removed.')) social.updateFriendship('remove', friend.friendship_id); }}>Remove</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? They cannot send another request, and all sharing between you will be removed.')) social.updateFriendship('block', friend.friendship_id); }}>Block</button></span></div>)}</div>}
-      {!!received.length && <><h3 className="social-heading">Requests for you</h3><div className="social-list">{received.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><span className="social-actions"><button className="pillbtn" onClick={() => social.updateFriendship('accept', row.id)}>Accept</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? They cannot send another request, and all sharing between you will be removed.')) social.updateFriendship('block', row.id); }}>Block</button></span></div>)}</div></>}
-      {!!sent.length && <><h3 className="social-heading">Sent</h3><div className="social-list">{sent.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><button className="pillbtn" onClick={() => { if (window.confirm('Remove this connection? All sharing between you will also be removed.')) social.updateFriendship('remove', row.id); }}>Cancel</button></div>)}</div></>}
-    </div><div className="card"><h2>Sharing</h2><p className="sub">Share only completion events. Values, notes, missed days, and proof photos are never included.</p><p className="social-summary">{social.shares.length} active habit-friend share{social.shares.length === 1 ? '' : 's'}</p>{habits.length ? <button className="pillbtn" onClick={onOpenSharing}>Manage sharing</button> : <p className="tiny">Create a habit first to share progress.</p>}</div></div>
-    <div className="card"><h2>Friend activity</h2>{!social.feed.length ? <p className="sub">Shared completions from friends will appear here.</p> : <div className="social-feed">{social.feed.map((item) => <div key={item.id}><span className="social-avatar">✓</span><p><b>{item.person.display_name}</b> completed <b>{item.habit_label}</b><small>{item.occurred_on}</small></p></div>)}</div>}</div>
+    {section === 'leaderboard' ? <Leaderboard social={social} /> : section === 'friends' ? <Friends social={social} habits={habits} onOpenSharing={onOpenSharing} /> : <Activity social={social} />}
   </>;
 }
 
-function ProfileSetup({ onSave }) {
-  const [name, setName] = useState(''), [handle, setHandle] = useState('');
-  function submit() {
-    const cleanName = name.trim(), cleanHandle = handle.trim().toLowerCase().replace(/^@/, '');
-    if (!cleanName || cleanName.length > 40 || !/^[a-z0-9_]{3,24}$/.test(cleanHandle)) {
-      window.alert('Use a display name and a 3–24 character handle containing lowercase letters, numbers, or _.'); return;
-    }
-    onSave(cleanName, cleanHandle);
-  }
-  return <div className="card"><h2>Set up Friends</h2><p className="sub">Choose a handle friends can use to find you. Your email, notes, values, and proof photos remain private.</p><label className="f"><span>Display name</span><input maxLength="40" autoComplete="nickname" placeholder="How friends see you" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="f"><span>Handle</span><input maxLength="24" autoComplete="username" placeholder="e.g. madhav" value={handle} onChange={(event) => setHandle(event.target.value)} /></label><button className="cta" onClick={submit}>Save profile</button></div>;
+function Activity({ social }) {
+  const mine = (social.leaderboard || []).find((row) => row.user_id === social.profile.id);
+  return <>
+    <section className="social-hero"><span className="eyebrow">YOUR CIRCLE THIS WEEK</span><h2>{mine ? `You’re #${mine.rank}` : 'Show up together'}</h2><p>{mine ? `${mine.completion_count} shared completion${Number(mine.completion_count) === 1 ? '' : 's'} across ${mine.active_days} active day${Number(mine.active_days) === 1 ? '' : 's'}.` : social.profile.leaderboard_enabled ? 'Share a completion to enter this week’s ranking.' : 'Turn on leaderboard participation in Profile when you’re ready.'}</p><Link className="cta" to="/social/leaderboard">View leaderboard</Link></section>
+    <section className="card"><div className="section-heading"><div><h2>Friend activity</h2><p className="sub">Progress your friends chose to share with you.</p></div><Link className="text-link" to="/social/friends">Friends</Link></div>{!social.feed.length ? <div className="empty"><div className="big">🌱</div><p>No shared completions yet.</p><Link className="pillbtn" to="/social/friends">Add a friend</Link></div> : <div className="social-feed">{social.feed.map((item) => <div key={item.id}><span className="social-avatar">✓</span><p><Link to={`/profile/${item.actor_id}`}><b>{item.person.display_name}</b></Link> completed <b>{item.habit_label}</b><small>{item.occurred_on}</small></p></div>)}</div>}</section>
+  </>;
 }
 
-function FriendInvite({ onSend }) {
-  const [handle, setHandle] = useState('');
-  return <div className="card"><h2>Your accountability circle</h2><p className="sub">Invite someone by their exact handle. They must accept before they can see shared completions.</p><div className="social-invite"><input aria-label="Friend handle" maxLength="24" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta" onClick={() => { const clean = handle.trim().toLowerCase().replace(/^@/, ''); if (clean) onSend(clean); }}>Send request</button></div></div>;
+function Leaderboard({ social }) {
+  const currentWeek = weekStartKey();
+  const end = shiftDate(social.leaderboardWeek, 6);
+  return <section className="card leaderboard-card"><div className="section-heading"><div><h2>Weekly leaderboard</h2><p className="sub">Shared with you · {formatDate(social.leaderboardWeek)}–{formatDate(end)}</p></div></div>
+    <div className="leaderboard-controls"><button className="pillbtn" onClick={() => social.selectLeaderboardWeek(shiftDate(social.leaderboardWeek, -7))}>Previous</button><button className="pillbtn" disabled={social.leaderboardWeek >= currentWeek} onClick={() => social.selectLeaderboardWeek(shiftDate(social.leaderboardWeek, 7))}>Next</button></div>
+    <p className="tiny">Only accepted friends who opted in appear. Scores count completion events explicitly shared with you.</p>
+    {social.leaderboardStatus === 'loading' ? <p className="sub">Loading ranks…</p> : social.leaderboardStatus === 'error' ? <p className="banner" role="alert">{social.leaderboardError}</p> : !social.leaderboard.length ? <div className="empty"><div className="big">🏁</div><p>No one has joined this week’s leaderboard yet.</p><Link className="pillbtn" to="/profile">Check my profile settings</Link></div> : <ol className="leaderboard-list">{social.leaderboard.map((row) => {
+      const mine = row.user_id === social.profile.id;
+      return <li key={row.user_id} className={mine ? 'mine' : ''}><span className="leader-rank">{Number(row.rank) <= 3 ? ['🥇','🥈','🥉'][Number(row.rank) - 1] : `#${row.rank}`}</span><span className="leader-avatar">{initials(row.display_name)}</span><span className="leader-person"><b>{mine ? 'You' : row.display_name}</b><small>@{row.handle} · {row.active_days} active day{Number(row.active_days) === 1 ? '' : 's'}</small></span><strong>{row.completion_count}<small>done</small></strong></li>;
+    })}</ol>}
+  </section>;
 }
+
+function Friends({ social, habits, onOpenSharing }) {
+  const [handle, setHandle] = useState('');
+  const received = social.requests.filter((row) => row.addressee_id === social.profile.id);
+  const sent = social.requests.filter((row) => row.requester_id === social.profile.id);
+  function request(event) {
+    event.preventDefault();
+    const clean = handle.trim().toLowerCase().replace(/^@/, '');
+    if (clean) social.sendRequest(clean).then((ok) => { if (ok) setHandle(''); });
+  }
+  return <>
+    <section className="card"><h2>Grow your circle</h2><p className="sub">Invite someone by their exact handle. They must accept before sharing or chat begins.</p><form className="social-invite" onSubmit={request}><input aria-label="Friend handle" maxLength="24" placeholder="Friend handle" autoComplete="off" value={handle} onChange={(event) => setHandle(event.target.value)} /><button className="cta">Send request</button></form></section>
+    {!!received.length && <section className="card request-card"><h2>Requests for you</h2><div className="social-list">{received.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><span className="social-actions"><button className="pillbtn" onClick={() => social.updateFriendship('accept', row.id)}>Accept</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? They cannot send another request.')) social.updateFriendship('block', row.id); }}>Block</button></span></div>)}</div></section>}
+    <section className="card"><h2>Friends</h2>{!social.friends.length ? <p className="sub">No accepted friends yet.</p> : <div className="social-list">{social.friends.map((friend) => <div key={friend.id}><Link className="friend-name" to={`/profile/${friend.id}`}><b>{friend.display_name}</b><span>@{friend.handle}</span></Link><span className="social-actions"><button className="pillbtn" onClick={() => social.openChat(friend)}>Message</button><button className="pillbtn" onClick={() => { if (window.confirm('Remove this connection? All sharing and chat between you will be removed.')) social.updateFriendship('remove', friend.friendship_id); }}>Remove</button><button className="pillbtn danger-outline" onClick={() => { if (window.confirm('Block this person? All sharing and chat between you will be removed.')) social.updateFriendship('block', friend.friendship_id); }}>Block</button></span></div>)}</div>}
+      {!!sent.length && <><h3 className="social-heading">Sent requests</h3><div className="social-list">{sent.map((row) => <div key={row.id}><b>{row.person.display_name}</b><span>@{row.person.handle}</span><button className="pillbtn" onClick={() => social.updateFriendship('remove', row.id)}>Cancel</button></div>)}</div></>}
+    </section>
+    <section className="card"><h2>Sharing</h2><p className="sub">Choose which friends see completion events for each habit. Values, missed days, notes, and photos stay private.</p><p className="social-summary">{social.shares.length} active share{social.shares.length === 1 ? '' : 's'}</p>{habits.length ? <button className="pillbtn" onClick={onOpenSharing}>Manage sharing</button> : <p className="tiny">Create a habit first to share progress.</p>}</section>
+  </>;
+}
+
+function shiftDate(key, days) {
+  const date = new Date(`${key}T00:00:00`); date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function formatDate(key) { return new Date(`${key}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); }
+function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }

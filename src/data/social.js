@@ -1,5 +1,6 @@
 export async function loadSocialData(client, userId) {
-  const profileResult = await client.from('profiles').select('id,handle,display_name').eq('id', userId).maybeSingle();
+  const profileFields = 'id,handle,display_name,bio,discoverable,leaderboard_enabled';
+  const profileResult = await client.from('profiles').select(profileFields).eq('id', userId).maybeSingle();
   if (profileResult.error) throw profileResult.error;
   const profile = profileResult.data || null;
   if (!profile) return { profile: null, friends: [], requests: [], shares: [], feed: [] };
@@ -10,7 +11,7 @@ export async function loadSocialData(client, userId) {
   const rows = friendshipResult.data || [];
   const ids = rows.map((row) => row.requester_id === userId ? row.addressee_id : row.requester_id);
   const peopleResult = ids.length
-    ? await client.from('profiles').select('id,handle,display_name').in('id', ids)
+    ? await client.from('profiles').select(profileFields).in('id', ids)
     : { data: [], error: null };
   if (peopleResult.error) throw peopleResult.error;
   const people = Object.fromEntries((peopleResult.data || []).map((person) => [person.id, person]));
@@ -31,7 +32,7 @@ export async function loadSocialData(client, userId) {
   const feedRows = feedResult.data || [];
   const actorIds = [...new Set(feedRows.map((row) => row.actor_id))];
   const actorsResult = actorIds.length
-    ? await client.from('profiles').select('id,handle,display_name').in('id', actorIds)
+    ? await client.from('profiles').select(profileFields).in('id', actorIds)
     : { data: [], error: null };
   if (actorsResult.error) throw actorsResult.error;
   const actors = Object.fromEntries((actorsResult.data || []).map((person) => [person.id, person]));
@@ -44,8 +45,33 @@ export async function loadSocialData(client, userId) {
   };
 }
 
-export async function saveProfile(client, userId, displayName, handle) {
-  const result = await client.from('profiles').upsert({ id: userId, display_name: displayName, handle, discoverable: true }, { onConflict: 'id' });
+export async function saveProfile(client, userId, profile) {
+  const result = await client.from('profiles').upsert({
+    id: userId,
+    display_name: profile.displayName,
+    handle: profile.handle,
+    bio: profile.bio || '',
+    discoverable: profile.discoverable,
+    leaderboard_enabled: profile.leaderboardEnabled,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'id' });
+  if (result.error) throw result.error;
+}
+
+export async function loadLeaderboard(client, weekStart) {
+  const result = await client.rpc('social_leaderboard_week', { week_start: weekStart });
+  if (result.error) throw result.error;
+  return result.data || [];
+}
+
+export async function loadUnreadChats(client) {
+  const result = await client.rpc('social_unread_chats');
+  if (result.error) throw result.error;
+  return result.data || [];
+}
+
+export async function markChatRead(client, conversationId, throughTime) {
+  const result = await client.rpc('mark_social_chat_read', { conversation: conversationId, through_time: throughTime });
   if (result.error) throw result.error;
 }
 
@@ -73,19 +99,6 @@ export async function setHabitShare(client, ownerId, habitId, viewerId, active) 
   const result = active
     ? await client.from('habit_shares').insert({ habit_id: habitId, owner_id: ownerId, viewer_id: viewerId })
     : await client.from('habit_shares').delete().eq('habit_id', habitId).eq('owner_id', ownerId).eq('viewer_id', viewerId);
-  if (result.error) throw result.error;
-}
-
-export async function publishCompletion(client, profileId, habit, entryDate) {
-  const result = await client.from('social_activities').upsert({
-    actor_id: profileId, habit_id: habit.id, habit_label: habit.name, kind: 'completed', occurred_on: entryDate,
-  }, { onConflict: 'actor_id,habit_id,kind,occurred_on', ignoreDuplicates: true });
-  if (result.error) throw result.error;
-}
-
-export async function unpublishCompletion(client, profileId, habitId, entryDate) {
-  const result = await client.from('social_activities').delete().eq('actor_id', profileId)
-    .eq('habit_id', habitId).eq('kind', 'completed').eq('occurred_on', entryDate);
   if (result.error) throw result.error;
 }
 

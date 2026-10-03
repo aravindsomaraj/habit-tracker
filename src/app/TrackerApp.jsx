@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { matchPath, useLocation, useNavigate } from 'react-router';
+import { Link, matchPath, useLocation, useNavigate } from 'react-router';
 import { Banner } from '../components/Banner.jsx';
 import { ChatModal } from '../components/ChatModal.jsx';
 import { Confetti, Toast } from '../components/Toast.jsx';
@@ -15,14 +15,22 @@ import { GraphView } from '../views/GraphView.jsx';
 import { ManageView } from '../views/ManageView.jsx';
 import { ProgressView } from '../views/ProgressView.jsx';
 import { ProofView } from '../views/ProofView.jsx';
+import { ProfileView } from '../views/ProfileView.jsx';
 import { SocialView } from '../views/SocialView.jsx';
 import { TodayView } from '../views/TodayView.jsx';
 import { AppShell } from '../components/AppShell.jsx';
 
 const habitViews = ['progress', 'calendar', 'graph', 'proof'];
 const otherViews = ['today', 'friends', 'habits'];
+const socialSections = ['activity', 'leaderboard', 'friends'];
 
 function routeFromPath(pathname) {
+  const friendProfile = matchPath({ path: '/profile/:profileId', end: true }, pathname);
+  if (friendProfile) return { view: 'profile', profileId: friendProfile.params.profileId };
+  if (pathname === '/profile') return { view: 'profile' };
+  const socialRoute = matchPath({ path: '/social/:section', end: true }, pathname);
+  if (socialRoute && socialSections.includes(socialRoute.params.section)) return { view: 'social', section: socialRoute.params.section };
+  if (pathname === '/social') return { view: 'social', section: 'activity', canonical: '/social/activity' };
   const habitRoute = matchPath({ path: '/:view/:habitId', end: true }, pathname);
   if (habitRoute && habitViews.includes(habitRoute.params.view)) return habitRoute.params;
   const plainRoute = matchPath({ path: '/:view', end: true }, pathname);
@@ -52,6 +60,8 @@ export function TrackerApp({ auth }) {
 
   useEffect(() => {
     if (!route) { navigate('/today', { replace: true }); return; }
+    if (route.canonical) { navigate(route.canonical, { replace: true }); return; }
+    if (route.view === 'friends') { navigate('/social/friends', { replace: true }); return; }
     if (store.status !== 'ready' || !habitViews.includes(route.view)) return;
     if (!store.habits.length) return;
     if (!route.habitId || !store.habits.some((habit) => habit.id === route.habitId)) {
@@ -115,9 +125,12 @@ export function TrackerApp({ auth }) {
   let content;
   if (store.status === 'loading') content = <div className="card"><p className="sub">Loading your habits…</p></div>;
   else if (store.status === 'error') content = <div className="card"><p className="sub">Your habits could not be loaded. Reload to retry.</p></div>;
-  else if (view === 'social') content = <SocialView social={social} habits={store.habits} onOpenSharing={() => setModal({ type: 'sharing' })} />;
+  else if (view === 'social') content = <SocialView social={social} habits={store.habits} section={route?.section || 'friends'} onOpenSharing={() => setModal({ type: 'sharing' })} />;
+  else if (view === 'profile') content = <ProfileView social={social} user={auth.session.user} habits={store.habits} entries={store.entries} profileId={route?.profileId} />;
   else if (!store.habits.length) content = <div className="card"><div className="empty"><div className="big">🎯</div><h2>No habits yet</h2><p className="sub">Tell me the habit and the goal — I'll break it into daily steps you can tick off.</p><button className="cta" onClick={() => setModal({ type: 'new' })}>Create my first habit</button></div></div>;
   else {
+    const progressSections = ['progress', 'graph', 'proof'];
+    const progressTabs = progressSections.includes(view) ? <nav className="section-tabs" aria-label="Progress sections">{progressSections.map((section) => <Link key={section} className={view === section ? 'on' : ''} to={habitPath(section)}>{section === 'progress' ? 'Overview' : section[0].toUpperCase() + section.slice(1)}</Link>)}</nav> : null;
     const picker = habitViews.includes(view) ? <HabitPicker habits={store.habits} selected={habit.id} onPick={(id) => navigate(habitPath(view, id), { viewTransition: true })} /> : null;
     const views = {
       today: <TodayView userId={userId} habits={store.habits} entries={store.entries} selectedHabit={habit} onSaveEntry={store.saveEntry} onToggle={toggle} onPhoto={choosePhoto} />,
@@ -127,17 +140,17 @@ export function TrackerApp({ auth }) {
       proof: <ProofView client={auth.client} userId={userId} habit={habit} entries={store.entries} onRemove={removePhoto} />,
       manage: <ManageView habits={store.habits} entries={store.entries} onDelete={(habitItem) => setModal({ type: 'delete', habit: habitItem })} onNew={() => setModal({ type: 'new' })} />,
     };
-    content = <>{picker}{views[view] || views.manage}</>;
+    content = <>{progressTabs}{picker}{views[view] || views.manage}</>;
   }
 
   const dayEntry = modal?.type === 'day' ? entryOf(store.entries, modal.habit, modal.entryDate) || {} : null;
   return <>
-    <AppShell view={view} links={Object.fromEntries(['today', ...habitViews, 'social', 'manage'].map((key) => [key, habitViews.includes(key) ? habitPath(key) : key === 'social' ? '/friends' : key === 'manage' ? '/habits' : '/today']))} unreadCount={social.unreadCount} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
+    <AppShell view={view} links={{ today: '/today', progress: habitPath('progress'), calendar: habitPath('calendar'), social: '/social/activity', manage: '/habits', profile: '/profile' }} socialCount={social.unreadCount + social.receivedCount} profile={social.profile} busy={store.busy || store.status !== 'ready'} authBusy={auth.busy} onNew={() => setModal({ type: 'new' })} onTheme={toggleTheme} onLogout={auth.logout}>
       <Banner>{auth.accountMessage}</Banner><Banner>{store.message}</Banner>
       <main id="main-content" tabIndex={-1} aria-busy={store.busy || store.status === 'loading'} inert={store.busy || store.status === 'loading'}>{content}</main>
     </AppShell>
     {(modal || social.chat) && <Modal onClose={closeModal} busy={store.busy}><Banner>{store.message}</Banner>
-      {social.chat ? <ChatModal client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`, { viewTransition: true }); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
+      {social.chat ? <ChatModal client={auth.client} profile={social.profile} chat={social.chat} onClose={closeModal} onRead={social.markConversationRead} /> : modal.type === 'new' ? <NewHabitModal initialTemplate={draftTemplate} onTemplateChange={setDraftTemplate} onCancel={closeModal} onCreate={async (draft) => { const result = await store.createHabit(draft); if (result.ok) { setSelected(result.habit.id); navigate(`/progress/${result.habit.id}`, { viewTransition: true }); closeModal(); } }} /> : modal.type === 'delete' ? <DeleteHabitModal habit={modal.habit} onClose={closeModal} onDelete={async () => { const result = await store.deleteHabit(modal.habit); if (result.ok) closeModal(); }} /> : modal.type === 'sharing' ? <SharingModal habits={store.habits} social={social} onClose={closeModal} /> : modal.type === 'day' ? <DayModal client={auth.client} userId={userId} habit={modal.habit} entryDate={modal.entryDate} entry={dayEntry} onClose={closeModal} onPhoto={() => choosePhoto(modal.habit, modal.entryDate, true)} onRemovePhoto={() => removePhoto(modal.habit, modal.entryDate, true)} onRest={async () => { const result = await store.saveEntry(modal.habit, modal.entryDate, { done: false, rest: true }); if (result.ok) { social.removeCompletion(modal.habit, modal.entryDate); closeModal(); showToast('😌 Rest day — streak protected'); } }} onSave={async (patch) => { const result = await store.saveEntry(modal.habit, modal.entryDate, patch); if (result.ok) { social.recordCompletion(modal.habit, modal.entryDate); closeModal(); } }} /> : null}
     </Modal>}
     <Toast message={toast} onDone={clearToast} /><Confetti burst={burst} />
   </>;

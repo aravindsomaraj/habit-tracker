@@ -5,7 +5,7 @@ import { AuthProvider } from '../src/auth/AuthContext.jsx';
 import { AuthScreen } from '../src/auth/AuthScreen.jsx';
 import { insertHabit, readPages, writeEntryRow } from '../src/data/habits.js';
 import { checkPhotoPath, deleteHabitPhotos, replaceProofPhoto, signedPhoto } from '../src/data/photos.js';
-import { publishCompletion } from '../src/data/social.js';
+import { loadLeaderboard, saveProfile } from '../src/data/social.js';
 import { dateKey, pointsForDay, stats, today } from '../src/lib/tracker.js';
 
 const authMock = vi.hoisted(() => ({ client: null }));
@@ -195,11 +195,19 @@ describe('private proof photos', () => {
 });
 
 describe('social privacy', () => {
-  it('publishes completion metadata without values, notes, or photo paths', async () => {
+  it('loads a week through the viewer-scoped leaderboard function', async () => {
+    const rpc = vi.fn(async () => ({ data: [{ user_id: 'owner', completion_count: 3 }], error: null }));
+    const rows = await loadLeaderboard({ rpc }, '2026-09-21');
+    expect(rpc).toHaveBeenCalledWith('social_leaderboard_week', { week_start: '2026-09-21' });
+    expect(rows[0].completion_count).toBe(3);
+  });
+
+  it('saves only supported public profile settings', async () => {
     let payload;
-    const client = { from: () => ({ upsert: async (row, options) => { payload = row; expect(options.ignoreDuplicates).toBe(true); return { error: null }; } }) };
-    await publishCompletion(client, 'owner', { id: 'habit', name: 'Walk', value: 5000, photo: 'private/path' }, '2026-09-21');
-    expect(payload).toEqual({ actor_id: 'owner', habit_id: 'habit', habit_label: 'Walk', kind: 'completed', occurred_on: '2026-09-21' });
+    const client = { from: () => ({ upsert: async (row) => { payload = row; return { error: null }; } }) };
+    await saveProfile(client, 'owner', { displayName: 'Madhav', handle: 'madhav', bio: 'Reading daily', discoverable: false, leaderboardEnabled: true, email: 'private@example.com' });
+    expect(payload).toMatchObject({ id: 'owner', display_name: 'Madhav', handle: 'madhav', bio: 'Reading daily', discoverable: false, leaderboard_enabled: true });
+    expect(payload).not.toHaveProperty('email');
   });
 });
 

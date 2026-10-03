@@ -5,19 +5,28 @@ function mergeMessage(messages, incoming) {
   return messages.some((message) => message.id === incoming.id) ? messages : [...messages, incoming];
 }
 
-export function ChatModal({ client, profile, chat, onClose }) {
+export function ChatModal({ client, profile, chat, onClose, onRead }) {
   const [messages, setMessages] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [body, setBody] = useState(''), [sending, setSending] = useState(false);
   const box = useRef(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
-    loadMessages(client, chat.conversationId).then((rows) => { if (active) { setMessages(rows); setLoading(false); } }).catch((loadError) => { if (active) { setError(loadError.message || 'Please retry.'); setLoading(false); } });
+    loadMessages(client, chat.conversationId).then((rows) => {
+      if (active) {
+        setMessages(rows); setLoading(false);
+        const latest = rows.at(-1);
+        if (latest && document.visibilityState !== 'hidden') onRead(chat.conversationId, latest.created_at);
+      }
+    }).catch((loadError) => { if (active) { setError(loadError.message || 'Please retry.'); setLoading(false); } });
     const channel = client.channel(`chat:${chat.conversationId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${chat.conversationId}` }, (payload) => {
-      if (active) setMessages((current) => mergeMessage(current, payload.new));
+      if (active) {
+        setMessages((current) => mergeMessage(current, payload.new));
+        if (document.visibilityState !== 'hidden') onRead(chat.conversationId, payload.new.created_at);
+      }
     }).subscribe();
     return () => { active = false; client.removeChannel(channel); };
-  }, [chat.conversationId, client]);
+  }, [chat.conversationId, client, onRead]);
   useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [messages]);
 
   async function submit(event) {

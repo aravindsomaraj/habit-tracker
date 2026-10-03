@@ -1,12 +1,14 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router';
 import { dateKey, today } from '../src/lib/tracker.js';
 import { CalendarView } from '../src/views/CalendarView.jsx';
 import { GraphView } from '../src/views/GraphView.jsx';
 import { ManageView } from '../src/views/ManageView.jsx';
 import { ProgressView } from '../src/views/ProgressView.jsx';
 import { ProofView } from '../src/views/ProofView.jsx';
+import { ProfileView } from '../src/views/ProfileView.jsx';
 import { SocialView } from '../src/views/SocialView.jsx';
 import { TodayView } from '../src/views/TodayView.jsx';
 
@@ -35,12 +37,20 @@ describe('view smoke coverage', () => {
   });
 
   it('renders the Friends profile setup and populated feed states', () => {
-    const base = { status: 'ready', error: '', message: '', requests: [], shares: [], createProfile: vi.fn(), sendRequest: vi.fn(), updateFriendship: vi.fn(), openChat: vi.fn() };
-    const setup = render(<SocialView habits={[habit]} social={{ ...base, profile: null, friends: [], feed: [] }} onOpenSharing={vi.fn()} />);
-    expect(screen.getByText('Set up Friends')).toBeTruthy();
+    const base = { status: 'ready', error: '', message: '', requests: [], shares: [], leaderboard: [], receivedCount: 0, createProfile: vi.fn(), sendRequest: vi.fn(), updateFriendship: vi.fn(), openChat: vi.fn() };
+    const setup = render(<MemoryRouter><SocialView habits={[habit]} social={{ ...base, profile: null, friends: [], feed: [] }} onOpenSharing={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByText('Build habits with people you trust')).toBeTruthy();
     setup.unmount();
-    render(<SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner' }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} />);
+    render(<MemoryRouter><SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner', leaderboard_enabled: false }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', actor_id: 'friend', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText('Friend activity')).toBeTruthy();
-    expect(screen.getByText('Message')).toBeTruthy();
+    expect(screen.getByText('Alex')).toBeTruthy();
+  });
+
+  it('renders editable private profile settings and account stats', () => {
+    const social = { status: 'ready', message: '', profile: { id: 'owner', display_name: 'Madhav', handle: 'madhav', bio: '', discoverable: true, leaderboard_enabled: false }, friends: [], feed: [], leaderboard: [], updateProfile: vi.fn() };
+    render(<ProfileView social={social} user={{ email: 'person@example.com' }} habits={[habit]} entries={entries} />);
+    expect(screen.getByRole('heading', { name: 'Edit profile' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /Join the friends leaderboard/ })).toBeTruthy();
+    expect(screen.getByText('person@example.com')).toBeTruthy();
   });
 });

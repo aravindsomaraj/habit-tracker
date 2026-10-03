@@ -11,7 +11,7 @@ const fixtures = vi.hoisted(() => {
   ];
   return {
     store: { status: 'ready', habits, entries: {}, busy: false, message: '', saveEntry: vi.fn(), createHabit: vi.fn(), deleteHabit: vi.fn(), uploadPhoto: vi.fn(), removePhoto: vi.fn() },
-    social: { status: 'ready', profile: null, requests: [], friends: [], shares: [], feed: [], unreadCount: 0, chat: null, setChat: vi.fn(), recordCompletion: vi.fn(), removeCompletion: vi.fn() },
+    social: { status: 'ready', profile: null, requests: [], friends: [], shares: [], feed: [], leaderboard: [], unreadCount: 0, receivedCount: 0, chat: null, setChat: vi.fn(), recordCompletion: vi.fn(), removeCompletion: vi.fn() },
   };
 });
 
@@ -22,7 +22,8 @@ vi.mock('../src/views/ProgressView.jsx', () => ({ ProgressView: ({ habit }) => <
 vi.mock('../src/views/CalendarView.jsx', () => ({ CalendarView: ({ habit }) => <div data-testid="view">Calendar {habit.name}</div> }));
 vi.mock('../src/views/GraphView.jsx', () => ({ GraphView: ({ habit }) => <div data-testid="view">Graph {habit.name}</div> }));
 vi.mock('../src/views/ProofView.jsx', () => ({ ProofView: ({ habit }) => <div data-testid="view">Proof {habit.name}</div> }));
-vi.mock('../src/views/SocialView.jsx', () => ({ SocialView: () => <div data-testid="view">Friends</div> }));
+vi.mock('../src/views/SocialView.jsx', () => ({ SocialView: ({ section }) => <div data-testid="view">Social {section}</div> }));
+vi.mock('../src/views/ProfileView.jsx', () => ({ ProfileView: ({ profileId }) => <div data-testid="view">Profile {profileId || 'me'}</div> }));
 vi.mock('../src/views/ManageView.jsx', () => ({ ManageView: () => <div data-testid="view">Habits</div> }));
 
 function LocationControls() {
@@ -50,14 +51,23 @@ describe('tracker routes', () => {
     expect(screen.getByTestId('view').textContent).toBe('Calendar Reading');
   });
 
-  it('puts habit picker and Friends navigation in the URL', () => {
+  it('puts habit picker and Social navigation in the URL', () => {
     openAt('/progress/reading');
     fireEvent.click(screen.getByRole('button', { name: /Walking/ }));
     expect(screen.getByTestId('path').textContent).toBe('/progress/walking');
     expect(screen.getByTestId('view').textContent).toBe('Progress Walking');
-    fireEvent.click(screen.getByRole('link', { name: /Friends/ }));
-    expect(screen.getByTestId('path').textContent).toBe('/friends');
-    expect(screen.getByTestId('view').textContent).toBe('Friends');
+    fireEvent.click(screen.getByRole('link', { name: 'Social' }));
+    expect(screen.getByTestId('path').textContent).toBe('/social/activity');
+    expect(screen.getByTestId('view').textContent).toBe('Social activity');
+  });
+
+  it('redirects the old Friends route and opens friend profiles', async () => {
+    openAt('/friends');
+    await waitFor(() => expect(screen.getByTestId('path').textContent).toBe('/social/friends'));
+    expect(screen.getByTestId('view').textContent).toBe('Social friends');
+    cleanup();
+    openAt('/profile/friend-id');
+    expect(screen.getByTestId('view').textContent).toBe('Profile friend-id');
   });
 
   it('replaces an invalid habit deep link with the first available habit', async () => {
