@@ -39,7 +39,7 @@ describe('view smoke coverage', () => {
     const setup = render(<SocialView habits={[habit]} social={{ ...base, profile: null, friends: [], feed: [] }} onOpenSharing={vi.fn()} />);
     expect(screen.getByText('Set up Friends')).toBeTruthy();
     setup.unmount();
-    render(<SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner' }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} />);
+    render(<SocialView habits={[habit]} social={{ ...base, profile: { id: 'owner', handle: 'owner' }, friends: [{ id: 'friend', display_name: 'Alex', handle: 'alex', friendship_id: 'f' }], feed: [{ id: 'activity', person: { display_name: 'Alex' }, habit_label: 'Reading', occurred_on: start }] }} onOpenSharing={vi.fn()} />);
     expect(screen.getByText('Friend activity')).toBeTruthy();
     expect(screen.getByText('Message')).toBeTruthy();
   });

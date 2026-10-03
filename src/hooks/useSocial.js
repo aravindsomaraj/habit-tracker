@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  friendshipRpc, loadSocialData, publishCompletion, requestFriend, saveProfile,
+  friendshipRpc, loadSocialData, publishCompletion, requestFriend,
   setHabitShare as writeHabitShare, startConversation, unpublishCompletion,
 } from '../data/social.js';
 
 const emptyData = { profile: null, friends: [], requests: [], shares: [], feed: [] };
 
-export function useSocial(client, userId, onToast) {
+export function useSocial(client, userId, onToast, profile) {
   const [data, setData] = useState(emptyData);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
@@ -23,7 +23,7 @@ export function useSocial(client, userId, onToast) {
   const load = useCallback(async (current, visibleMessage = '') => {
     setError('');
     try {
-      const loaded = await loadSocialData(client, userId);
+      const loaded = await loadSocialData(client, userId, profile);
       if (current !== generation.current) return;
       setData(loaded);
       setStatus('ready');
@@ -33,7 +33,7 @@ export function useSocial(client, userId, onToast) {
       setStatus('error');
       setError(`Social features require the social database migration. ${loadError.message || 'Please try again.'}`);
     }
-  }, [client, userId]);
+  }, [client, userId, profile]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -78,20 +78,6 @@ export function useSocial(client, userId, onToast) {
     }
   }, [load]);
 
-  const createProfile = useCallback(async (displayName, handle) => {
-    if (pending.current.has('profile')) return false;
-    pending.current.add('profile');
-    try {
-      await saveProfile(client, userId, displayName, handle);
-      await load(generation.current, 'Profile saved.');
-      return true;
-    } catch (profileError) {
-      window.alert(profileError.message || 'Could not save your profile.');
-      return false;
-    } finally {
-      pending.current.delete('profile');
-    }
-  }, [client, load, userId]);
   const sendRequest = useCallback((handle) => run(`request:${handle}`,
     () => requestFriend(client, dataRef.current.profile, handle), 'Friend request sent.'), [client, run]);
   const updateFriendship = useCallback((action, id) => {
@@ -128,7 +114,7 @@ export function useSocial(client, userId, onToast) {
 
   return {
     ...data, status, error, message, unreadCount: Object.keys(unread).length, chat,
-    setMessage, setChat, createProfile, sendRequest, updateFriendship, setShare, openChat,
+    setMessage, setChat, sendRequest, updateFriendship, setShare, openChat,
     recordCompletion, removeCompletion,
   };
 }

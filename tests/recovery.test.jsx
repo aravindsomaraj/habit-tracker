@@ -2,6 +2,7 @@ import React, { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/app/App.jsx';
+import { profileQuery } from './profileFixture.js';
 import { RECOVERY_KEY, RECOVERY_SUCCESS, recoveryRedirect } from '../src/auth/recovery.js';
 
 const mock = vi.hoisted(() => ({ client: null }));
@@ -15,7 +16,7 @@ function makeClient(initial = null) {
   const listeners = new Set();
   const unsubscribe = vi.fn();
   const client = {
-    listeners, unsubscribe,
+    listeners, unsubscribe, from: vi.fn(profileQuery),
     emit(event, value) { for (const cb of listeners) cb(event, value); },
     auth: {
       initialize: vi.fn(async () => ({ error: null })),
@@ -226,7 +227,7 @@ describe('consuming password recovery', () => {
     render(<App />);
     await screen.findByText('Welcome back');
     act(() => mock.client.emit('SIGNED_IN', session()));
-    expect(screen.getByText('Tracker for person')).toBeTruthy();
+    expect(await screen.findByText('Tracker for person')).toBeTruthy();
     expect(screen.queryByLabelText('New password')).toBeNull();
   });
   it('does not let a stale initial session override a newer auth event', async () => {
@@ -235,7 +236,7 @@ describe('consuming password recovery', () => {
     render(<App />);
     act(() => mock.client.emit('SIGNED_IN', session('new-account')));
     await act(async () => pending.resolve({ data: { session: session('old-account') }, error: null }));
-    expect(screen.getByText('Tracker for new-account')).toBeTruthy();
+    expect(await screen.findByText('Tracker for new-account')).toBeTruthy();
   });
   it('rejects an expired continuation marker on refresh', async () => {
     const view = await ready(); view.unmount();

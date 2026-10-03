@@ -2,6 +2,7 @@ import React, { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/app/App.jsx';
+import { profileQuery } from './profileFixture.js';
 import { createAuthStorage } from '../src/data/authStorage.js';
 
 const mock = vi.hoisted(() => ({ client: null, renders: vi.fn() }));
@@ -22,7 +23,7 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/');
   listeners = new Set();
   mock.renders.mockClear();
-  mock.client = { auth: {
+  mock.client = { from: vi.fn(profileQuery), auth: {
     initialize: vi.fn(async () => ({ error: null })),
     getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
     onAuthStateChange: vi.fn((listener) => { listeners.add(listener); return { data: { subscription: { unsubscribe: () => listeners.delete(listener) } } }; }),
@@ -99,7 +100,7 @@ describe('Google initiation in the central auth lifecycle', () => {
   it('uses the existing logout for a Google session and clears the tracker', async () => {
     await ready();
     act(() => emit('SIGNED_IN', { user: { id: 'google-user', app_metadata: { provider: 'google' } } }));
-    fireEvent.click(screen.getByRole('button', { name: 'Log out google-user' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Log out google-user' }));
     expect(await screen.findByText('You have logged out.')).toBeTruthy();
     expect(mock.client.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     expect(screen.getByText('Welcome back')).toBeTruthy();

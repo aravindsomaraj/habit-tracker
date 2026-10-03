@@ -131,10 +131,11 @@ Writes send only explicitly changed fields: ordinary daily edits do not overwrit
 
 ## Social accountability
 
-The Friends tab is opt-in. Users create a display name and a public handle, send
-and accept friend requests, then choose which friends may see a particular habit's
-completion events. The feed never contains numeric values, notes, missed days,
-or proof-photo paths. Unsharing a habit immediately prevents that friend from
+After authentication, users without a public handle choose and confirm one before
+entering the tracker. Existing handles are preserved. Social sharing is opt-in:
+users send and accept friend requests, then choose which friends may see a
+particular habit's completion events. The feed never contains numeric values,
+notes, missed days, or proof-photo paths. Unsharing a habit immediately prevents that friend from
 reading its existing feed records through RLS.
 
 Before deploying the social UI, apply
@@ -154,6 +155,10 @@ Apply `database/migrations/20260922_add_direct_chat.sql` after those migrations
 to enable private one-to-one text chat and live message delivery. Only accepted
 friends can create, read, or send messages; removing or blocking a friend also
 permanently removes the conversation and its messages.
+
+Apply `database/migrations/20261003_handle_onboarding.sql` before deploying the
+handle onboarding UI. See [HANDLES.md](HANDLES.md) for architecture, security,
+remote deployment status, exact migration/verification steps, and manual tests.
 
 ## Private proof photos
 

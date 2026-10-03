@@ -1,39 +1,23 @@
-# Database integration plan
+# Supabase database
 
-No engine or authentication provider has been selected. This proposed model
-maps the existing app to persistent, per-user data.
+The application uses Supabase Auth UUIDs for all data ownership and RLS. SQL
+migrations live here, rather than in `supabase/migrations`. Apply them in this
+order to a new project:
 
-| Entity | Data and constraints |
-| --- | --- |
-| User/profile | Authentication-provider user ID, optional display name, creation timestamp. Credentials belong to the auth provider. |
-| Habit | ID, owner ID, name, emoji, template type, unit, target, duration, start date, ramp flag, metric label, creation timestamp. |
-| Entry | Habit ID, date, done flag, value, metric, photo reference, note, update timestamp. Unique per habit/date. |
-| Photo | ID, owner ID, habit/entry association, private object-storage key, content type, size, creation timestamp. |
+1. `20260921_habit_tracker.sql`
+2. `20260921_photos_store.sql`
+3. `20260922_add_social.sql`
+4. `20260922_add_friend_controls.sql`
+5. `20260922_add_direct_chat.sql`
+6. `20261003_handle_onboarding.sql`
 
-Preserve the existing payload mapping: habits use `days`, `start`, `ramp`,
-`metric`, and `createdAt`; entries use `done`, `value`, `metric`, `photo`, `note`,
-and `ts`. Inspect `createHabit()` in `assets/js/app.js` for the complete habit
-payload. Numeric entry values may be null. Calendar keys are local dates in
-`YYYY-MM-DD` format, not UTC timestamps.
+For an existing project, apply only unapplied migrations. The new handle migration
+retains the existing profiles table, handles, UUIDs and private/social data.
+Read [the handle deployment guide](../HANDLES.md) for the exact SQL Editor/psql
+process, schema and RLS verification, deployment status, and manual acceptance
+checklist. Its read-only verification SQL is in
+`checks/20261003_handle_onboarding.sql`.
 
-Enforce foreign keys and one entry per habit/date. Index habit ownership and
-habit/date queries. Delete entries when deleting a habit and arrange cleanup of
-its photos. Store image bytes in private object storage, with database references.
-
-## Integration sequence
-
-1. Select authentication, database, and backend hosting.
-2. Add executable, versioned migrations in `migrations/`, verified sessions, and
-   per-user authorization before exposing data endpoints.
-3. Replace `boot`, `saveHabit`, `saveEntry`, and `removeHabit` in
-   `assets/js/storage.js`. Replace subscriptions with the chosen refresh mechanism.
-   Await writes and surface failures; the original code ignores some save errors.
-4. Replace `ASSETS.upload`, `ASSETS.delete`, and `/_blob/` URLs with the chosen
-   private file-storage flow. Validate uploads on the backend.
-5. Add login/logout UI. Clear habits, entries, selection, and subscriptions on
-   logout or account changes. Make importing temporary guest data explicit.
-6. Verify persistence after reload, expired sessions, failed writes, photo
-   cleanup, and that one account cannot access another account's data.
-
-Add ordered schema migrations after selecting the tooling, and document local
-and deployment commands. Do not commit live databases, backups, or user data.
+Do not commit credentials, database dumps, or user data. A plain `supabase db push`
+does not discover this directory; do not use it as a substitute for applying the
+explicit migration files.
